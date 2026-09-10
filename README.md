@@ -6,26 +6,54 @@ Scan your followers, review accounts matching your cleanup policy, keep exceptio
 
 **Status:** runnable implementation with a fake-account demo and automated tests. The private X adapter has not been qualified against a signed-in live account. Discovery of an operation is not proof that X accepts it. No live followers were removed during development.
 
-## Start here (macOS)
+## Install from your terminal (Apple Silicon macOS)
 
-The prepared native binary is `dist/forgive-me`; the unpacked extension is `dist/forgive-me-extension/`. Development tools are unnecessary when using these artifacts.
+Requires the [GitHub CLI](https://cli.github.com/) authenticated to an account with access to this private repository. If needed, install it with `brew install gh`, then run `gh auth login` once.
 
 ```sh
-./dist/forgive-me --demo
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh
+```
+
+The installer downloads the latest private release, verifies its SHA-256 checksum, and installs without `sudo`, Rust, Node, or Python:
+
+- Executable: `~/.local/bin/forgive-me`
+- Stable Chrome extension directory: `~/.local/share/forgive-me/bundle/forgive-me-extension`
+- App files and licenses: `~/.local/share/forgive-me/bundle/`
+
+It adds `~/.local/bin` to your zsh/bash startup file once. Open a new terminal afterward, or run `export PATH="$HOME/.local/bin:$PATH"` in the current one. It never copies or changes X credentials. Chrome's unpacked-extension installation remains a manual step.
+
+```sh
+forgive-me --demo
 ```
 
 The demo uses six fictional accounts and an in-memory database. Try `a`, `d`, then Enter to cancel; `d`, then `y` runs fake removals. During a batch, a ladle pours water onto an X beside your handle, the current target, and **“Reseting followers”**—a counter of verified removals. The illustration pauses when work stops; small terminals get a compact version. Use `--no-animation` for a still illustration.
 
 To use your real account:
 
-1. Run `./dist/forgive-me pair` and copy its port and pairing secret.
-2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist/forgive-me-extension/` (the directory containing `manifest.json`).
+1. Run `forgive-me pair` and copy its port and pairing secret.
+2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `~/.local/share/forgive-me/bundle/forgive-me-extension/` (the directory containing `manifest.json`).
 3. Open X in that Chrome profile and sign in. Visit your following and followers pages to expose current web request definitions.
-4. Start `./dist/forgive-me`. Click the extension icon, paste the pairing settings, and choose **Save & connect**.
+4. Start `forgive-me`. Click the extension icon, paste the pairing settings, and choose **Save & connect**.
 5. Verify the account shown in the terminal. Press `s` to scan. It collects following, then followers, then assesses candidates.
 6. Review evidence with Enter; `K` keeps an account. `m` shows matching accounts, `a` selects matches, and `d` reviews a capped batch. Enter cancels; only `y` approves removal.
 
 Keep Chrome and the terminal open during work. Reconnects start the controller paused. If an X operation is unavailable, refresh the relevant X page, choose **Refresh X discovery**, then reconnect. Incompatible responses stop work or leave evidence unknown; they are not treated as proof of inactivity.
+
+## Update, select a version, or uninstall
+
+Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions`. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
+
+```sh
+# Pin an available release instead of installing latest:
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.0
+
+# Uninstall binaries and extension files; keep cleanup data and pairing settings:
+sh ~/.local/share/forgive-me/bundle/install.sh --uninstall
+```
+
+Remove the extension from Chrome manually after uninstall. The shared `~/.local/bin` PATH entry is retained because other tools may use it. Shell configuration can be left unchanged with `--no-modify-path`. Custom dedicated locations use `FORGIVE_ME_INSTALL_DIR` and `FORGIVE_ME_BIN_DIR`; add a custom binary directory to PATH yourself, and use the same overrides when uninstalling.
+
+From a local checkout, `sh install.sh --from ./dist` installs the checksummed artifacts without GitHub access. The ZIP bundle can also be unpacked and its `forgive-me` executable launched directly. This release provides Apple Silicon macOS binaries; other platforms currently require building the source.
 
 ## Default policy
 
@@ -78,10 +106,10 @@ Only independently verified removals increment the removed counter. `already_abs
 Default macOS data directory: `~/Library/Application Support/forgive-me/`. It contains `cleanup.sqlite`, private `config.json`, and a process lock. Database content is local, not encrypted. Back up the directory with the application closed.
 
 ```sh
-./dist/forgive-me doctor
-./dist/forgive-me --port 47832 pair
-./dist/forgive-me --data-dir /path/to/private-folder
-./dist/forgive-me pair --reset
+forgive-me doctor
+forgive-me --port 47832 pair
+forgive-me --data-dir /path/to/private-folder
+forgive-me pair --reset
 ```
 
 `doctor` prints local configuration, saved owner, pairing identity and unresolved count; it does not contact X or certify adapter compatibility. Stop the TUI before running pairing/doctor for the same data directory. Changing the extension install directory can change its unpacked ID; use `pair --reset` if needed. Pairing settings are private: do not share them or screenshots containing them.
@@ -99,6 +127,7 @@ npm run check
 npm test
 cd ..
 ./scripts/package.sh
+python3 tests/install_test.py
 ```
 
 The packaging script produces the native executable for the current machine, an unpacked extension and its ZIP. It does not install the extension or change your X account. See [verification](docs/VERIFICATION.md) for tested behavior and remaining live checks, and [protocol](protocol/README.md) for the browser boundary.

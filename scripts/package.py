@@ -1,35 +1,66 @@
 #!/usr/bin/env python3
-"""Package only build products and public documentation; never user data."""
+"""Build archives in a fresh temp directory, then publish complete products to dist."""
 from pathlib import Path
-import json, shutil, subprocess, zipfile, platform, hashlib
-root=Path(__file__).resolve().parents[1]
-dist=root/'dist';dist.mkdir(exist_ok=True)
-shutil.copy2(root/'target/release/forgive-me',dist/'forgive-me')
-shutil.copytree(root/'extension/dist',dist/'forgive-me-extension',dirs_exist_ok=True)
-for name in ['README.md','LICENSE','THIRD_PARTY_NOTICES.md']:
-    shutil.copy2(root/name,dist/name)
-shutil.copytree(root/'docs',dist/'docs',dirs_exist_ok=True)
-shutil.copytree(root/'protocol',dist/'protocol',dirs_exist_ok=True)
-host=next(line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: '))
-metadata=json.loads(subprocess.check_output(['cargo','metadata','--locked','--offline','--filter-platform',host,'--format-version','1'],cwd=root))
-licenses=dist/'licenses';licenses.mkdir(exist_ok=True)
-lines=['# Dependency license inventory','','Generated from Cargo.lock and Cargo package metadata. Includes development and target-specific packages.','']
-for p in sorted(metadata['packages'],key=lambda p:(p['name'],p['version'])):
-    if p['name']=='forgive-me':continue
-    lines.append(f"- {p['name']} {p['version']}: {p.get('license') or 'See package license file'}")
-    package=Path(p['manifest_path']).parent
-    for f in package.iterdir():
-        if f.is_file() and f.name.upper().startswith(('LICENSE','COPYING','NOTICE','UNLICENSE')):
-            out=licenses/f"{p['name']}-{p['version']}";out.mkdir(exist_ok=True);shutil.copy2(f,out/f.name)
-(dist/'DEPENDENCY_LICENSES.md').write_text('\n'.join(lines)+'\n')
-with zipfile.ZipFile(dist/'forgive-me-extension.zip','w',zipfile.ZIP_DEFLATED,strict_timestamps=False)as z:
-    for p in sorted((dist/'forgive-me-extension').rglob('*')):
-        if p.is_file():z.write(p,p.relative_to(dist))
-archive=dist/f'forgive-me-macos-{platform.machine()}.zip'
-with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,strict_timestamps=False)as z:
-    for p in sorted(dist.rglob('*')):
-        if p.is_file() and p.suffix!='.zip' and p.name!='SHA256SUMS':z.write(p,Path('forgive-me')/p.relative_to(dist))
-print(f'Binary: {dist / "forgive-me"}\nExtension: {dist / "forgive-me-extension.zip"}\nBundle: {archive}')
+import hashlib
+import json
+import platform
+import shutil
+import subprocess
+import tempfile
+import zipfile
 
-products=[dist/'forgive-me',dist/'forgive-me-extension.zip',archive]
-(dist/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in products))
+root = Path(__file__).resolve().parents[1]
+dist = root / 'dist'
+dist.mkdir(exist_ok=True)
+host = next(line.split(': ', 1)[1] for line in subprocess.check_output(['rustc', '-vV'], text=True).splitlines() if line.startswith('host: '))
+metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--offline', '--filter-platform', host, '--format-version', '1'], cwd=root))
+
+with tempfile.TemporaryDirectory(prefix='forgive-me-package-') as temporary:
+    stage = Path(temporary)
+    bundle = stage / 'forgive-me'
+    bundle.mkdir()
+    shutil.copyfile(root / 'target/release/forgive-me', bundle / 'forgive-me')
+    (bundle / 'forgive-me').chmod(0o755)
+    shutil.copytree(root / 'extension/dist', bundle / 'forgive-me-extension', copy_function=shutil.copyfile)
+    for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh']:
+        shutil.copyfile(root / name, bundle / name)
+    for name in ['docs', 'protocol']:
+        shutil.copytree(root / name, bundle / name, copy_function=shutil.copyfile)
+    licenses = bundle / 'licenses'
+    licenses.mkdir()
+    lines = ['# Dependency license inventory', '', 'Generated from Cargo.lock and host package metadata, including development dependencies.', '']
+    for package in sorted(metadata['packages'], key=lambda p: (p['name'], p['version'])):
+        if package['name'] == 'forgive-me':
+            continue
+        lines.append(f"- {package['name']} {package['version']}: {package.get('license') or 'See package license file'}")
+        for source in Path(package['manifest_path']).parent.iterdir():
+            if source.is_file() and source.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE', 'UNLICENSE')):
+                folder = licenses / f"{package['name']}-{package['version']}"
+                folder.mkdir(exist_ok=True)
+                # Use current timestamps; registry epoch timestamps can confuse synced folders.
+                shutil.copyfile(source, folder / source.name)
+    (bundle / 'DEPENDENCY_LICENSES.md').write_text('\n'.join(lines) + '\n')
+    extension_zip = stage / 'forgive-me-extension.zip'
+    with zipfile.ZipFile(extension_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted((bundle / 'forgive-me-extension').rglob('*')):
+            if path.is_file():
+                archive.write(path, path.relative_to(bundle))
+    full_zip = stage / f'forgive-me-macos-{platform.machine()}.zip'
+    with zipfile.ZipFile(full_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(bundle.rglob('*')):
+            if path.is_file():
+                archive.write(path, path.relative_to(stage))
+    products = [bundle / 'forgive-me', extension_zip, full_zip]
+    checksums = ''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in products)
+    for path in products:
+        pending = dist / ('.' + path.name + '.pending')
+        shutil.copyfile(path, pending)
+        if path.name == 'forgive-me':
+            pending.chmod(0o755)
+        pending.replace(dist / path.name)
+    (dist / 'SHA256SUMS').write_text(checksums)
+    for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh', 'DEPENDENCY_LICENSES.md']:
+        shutil.copyfile(bundle / name, dist / name)
+    for name in ['docs', 'protocol', 'forgive-me-extension']:
+        shutil.copytree(bundle / name, dist / name, dirs_exist_ok=True, copy_function=shutil.copyfile)
+    print(f'Binary: {dist / "forgive-me"}\nExtension: {dist / extension_zip.name}\nBundle: {dist / full_zip.name}')
