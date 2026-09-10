@@ -1,6 +1,6 @@
 [package]
 name = "forgive-me"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 description = "A local Ratatui control plane for a Chrome-based X follower cleaner"

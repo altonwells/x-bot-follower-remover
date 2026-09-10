@@ -53,7 +53,7 @@ async function connect() {
     typeof settings.token !== "string" ||
     !/^[a-f0-9]{64}$/.test(settings.token)
   ) {
-    await setStatus("Pairing needed — run forgive-me pair");
+    await setStatus("Pairing needed — open forgive-me and follow setup");
     return;
   }
   const port = Number(settings.port);

@@ -13,7 +13,7 @@ export function parseUser(raw: Obj): Account {
   if (typeof id !== "string" || !/^\d+$/.test(id))
     throw new Error("Profile response missing stable account ID");
   const blue = bool(u.is_blue_verified ?? l.is_blue_verified),
-    legacy = bool(l.verified);
+    legacy = bool(u.verification?.verified ?? l.verified);
   const verifiedType = u.verification?.verified_type ?? l.verified_type;
   const verified =
     blue === true ||
@@ -29,10 +29,10 @@ export function parseUser(raw: Obj): Account {
     id,
     handle: text(u.core?.screen_name ?? l.screen_name),
     name: text(u.core?.name ?? l.name),
-    bio: text(l.description ?? u.profile_bio?.description),
-    followers: count(l.followers_count),
-    following_count: count(l.friends_count),
-    posts: count(l.statuses_count),
+    bio: text(u.profile_bio?.description ?? l.description),
+    followers: count(u.relationship_counts?.followers ?? l.followers_count),
+    following_count: count(u.relationship_counts?.following ?? l.friends_count),
+    posts: count(u.tweet_counts?.tweets ?? l.statuses_count),
     verified,
     protected: bool(u.privacy?.protected ?? l.protected),
     follows_me: bool(r.followed_by ?? l.followed_by),
@@ -80,7 +80,8 @@ export function parsePage(json: any): {
     users = new Map<string, Account>();
   let cursor: string | null = null,
     recognized = false,
-    terminated = false;
+    terminated = false,
+    emptyPage = false;
   for (const i of inst) {
     if (i.type === "TimelineTerminateTimeline" && i.direction === "Bottom") {
       terminated = true;
@@ -88,6 +89,12 @@ export function parsePage(json: any): {
     }
     if (i.type === "TimelineAddEntries" || i.type === "TimelineReplaceEntry") {
       recognized = true;
+      if (
+        i.type === "TimelineAddEntries" &&
+        Array.isArray(i.entries) &&
+        i.entries.length === 0
+      )
+        emptyPage = true;
       for (const e of i.entries ?? [i.entry]) {
         if (!e) continue;
         if (
@@ -112,7 +119,11 @@ export function parsePage(json: any): {
     }
   }
   if (!recognized) throw new Error("Timeline did not establish pagination");
-  const complete = terminated || cursor === null || cursor === "0";
+  if (cursor === null && !terminated && !(emptyPage && users.size === 0))
+    throw new Error(
+      "Missing bottom cursor; follower scan completeness is unknown",
+    );
+  const complete = terminated || cursor === "0" || cursor === null;
   return {
     accounts: [...users.values()],
     next_cursor: complete ? null : cursor,
@@ -163,10 +174,12 @@ export function postingEvidence(
   json: any,
   target: string,
   cutoff: number,
+  repostsOnly = false,
 ): { latest: number | null; coverage: number | null; note: string } {
   const times: number[] = [];
   let malformed = false;
   let chronological = false;
+  let terminated = false;
   const take = (raw: Obj) => {
     let t = raw?.tweet ?? raw?.result ?? raw;
     if (t?.__typename === "TweetWithVisibilityResults") t = t.tweet;
@@ -179,7 +192,10 @@ export function postingEvidence(
       malformed = true;
       return;
     }
-    if (actor !== target) return;
+    if (actor !== target) {
+      if (repostsOnly) malformed = true; // Original-post time cannot date a repost action.
+      return;
+    }
     const at = Date.parse(l?.created_at ?? "");
     if (Number.isFinite(at)) times.push(at);
     else malformed = true;
@@ -189,6 +205,8 @@ export function postingEvidence(
     for (const t of json) take(t);
   } else {
     for (const i of instructions(json)) {
+      if (i.type === "TimelineTerminateTimeline" && i.direction === "Bottom")
+        terminated = true;
       if (i.type !== "TimelineAddEntries" && i.type !== "TimelineReplaceEntry")
         continue;
       if (i.type === "TimelineAddEntries") chronological = true;
@@ -221,6 +239,12 @@ export function postingEvidence(
       coverage: cutoff,
       note: "Latest visible chronological posting actions predate the cutoff.",
     };
+  if (latest === null && !malformed && chronological && terminated)
+    return {
+      latest: null,
+      coverage: cutoff,
+      note: "X explicitly completed an empty activity timeline.",
+    };
   return {
     latest,
     coverage: null,
@@ -233,10 +257,14 @@ export const OPERATIONS = [
   "Following",
   "UserByRestId",
   "UserTweetsAndReplies",
+  "UserOriginalsTimeline",
+  "UserRepliesTimeline",
+  "UserRepostsTimeline",
   "RemoveFollower",
 ] as const;
 export type Operation = (typeof OPERATIONS)[number];
 export interface Template {
+  source?: "observed" | "bundle";
   id: string;
   variables: Obj;
   features: Obj;
@@ -246,12 +274,15 @@ export function discoverOperations(
   script: string,
 ): Partial<Record<Operation, Template>> {
   const found: Partial<Record<Operation, Template>> = {};
-  const re =
-    /queryId:\s*["']([A-Za-z0-9_-]+)["'],\s*operationName:\s*["']([A-Za-z]+)["']/g;
-  for (const m of script.matchAll(re)) {
+  const definitions = [
+    /queryId:\s*["'`]([A-Za-z0-9_-]+)["'`],\s*operationName:\s*["'`]([A-Za-z]+)["'`]/g,
+    /params:\s*\{id:\s*["'`]([A-Za-z0-9_-]+)["'`],[\s\S]{0,500}?name:\s*["'`]([A-Za-z]+)["'`],[\s\S]{0,100}?operationKind:/g,
+  ];
+  for (const m of definitions.flatMap((re) => [...script.matchAll(re)])) {
     if (!OPERATIONS.includes(m[2] as Operation)) continue;
-    const nearby =
-      script.slice(m.index!, m.index! + 3000).split("queryId:")[1] ?? "";
+    const nearby = script
+      .slice(m.index! + m[0].length, m.index! + 3000)
+      .split(/queryId:|params:\{id:/)[0];
     const switches = nearby.match(/featureSwitches:\s*\[([^\]]*)\]/)?.[1] ?? "";
     const features = Object.fromEntries(
       [...switches.matchAll(/["']([^"']+)["']/g)].map((m) => [m[1], false]),

@@ -38,6 +38,97 @@ test("blue verification and unknown fields are preserved", () => {
   assert.equal(parseUser(user({ legacy: { screen_name: "a" } })).posts, null);
   assert.throws(() => parseUser({ id: 9007199254740992 }));
 });
+test("July 2026 user fields preserve real counts and distinguish unverified from unknown", () => {
+  const modern = {
+    rest_id: "42",
+    core: { screen_name: "modern", name: "Modern" },
+    verification: { verified: false },
+    is_blue_verified: false,
+    relationship_counts: { followers: 0, following: 4050 },
+    tweet_counts: { tweets: 0 },
+    privacy: { protected: false },
+    profile_bio: { description: "bio" },
+    relationship_perspectives: { following: false, followed_by: true },
+  };
+  const a = parseUser(modern);
+  assert.equal(a.followers, 0);
+  assert.equal(a.following_count, 4050);
+  assert.equal(a.posts, 0);
+  assert.equal(a.verified, false);
+  assert.equal(a.i_follow, false);
+  assert.equal(a.follows_me, true);
+  assert.equal(
+    parseUser({ ...modern, verification: undefined }).verified,
+    null,
+  );
+  assert.equal(parseUser({ ...modern, is_blue_verified: true }).verified, true);
+  assert.equal(
+    parseUser({
+      ...modern,
+      verification: { verified: false, verified_type: "Government" },
+    }).verified,
+    true,
+  );
+  assert.equal(parseUser({ ...modern, tweet_counts: {} }).posts, null);
+});
+test("Relay query definitions and adjacent operation feature lists stay separate", () => {
+  const ops = discoverOperations(
+    'params:{id:"new-replies",metadata:{},name:"UserRepliesTimeline",operationKind:"query"};{queryId:"followers",operationName:"Followers",metadata:{featureSwitches:["one"]}};{queryId:"following",operationName:"Following",metadata:{featureSwitches:["two"]}}',
+  );
+  assert.equal(ops.UserRepliesTimeline?.id, "new-replies");
+  assert.deepEqual(ops.Followers?.features, { one: false });
+  assert.deepEqual(ops.Following?.features, { two: false });
+});
+test("nonempty graph pages without a bottom cursor never claim completeness", () => {
+  const entry = {
+    content: { itemContent: { user_results: { result: user() } } },
+  };
+  assert.throws(
+    () =>
+      parsePage({
+        instructions: [{ type: "TimelineAddEntries", entries: [entry] }],
+      }),
+    /completeness/,
+  );
+  assert.throws(
+    () => parsePage({ instructions: [{ type: "TimelineReplaceEntry" }] }),
+    /completeness/,
+  );
+  assert.equal(
+    parsePage({ instructions: [{ type: "TimelineAddEntries", entries: [] }] })
+      .complete,
+    true,
+  );
+});
+test("explicitly empty activity may finish a channel but foreign repost dates cannot", () => {
+  const done = { type: "TimelineTerminateTimeline", direction: "Bottom" };
+  const empty = {
+    instructions: [{ type: "TimelineAddEntries", entries: [] }, done],
+  };
+  assert.equal(postingEvidence(empty, "42", 100).coverage, 100);
+  const foreign = {
+    instructions: [
+      {
+        type: "TimelineAddEntries",
+        entries: [
+          {
+            content: {
+              itemContent: {
+                tweet_results: {
+                  result: {
+                    legacy: { user_id_str: "other", created_at: "2020-01-01" },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      done,
+    ],
+  };
+  assert.equal(postingEvidence(foreign, "42", Date.now(), true).coverage, null);
+});
 test("timeline pagination does not collect tweet authors as followers", () => {
   const json = {
     data: {

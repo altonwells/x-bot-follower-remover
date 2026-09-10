@@ -9,6 +9,18 @@ import {
   type Template,
 } from "./parsers";
 import { eligible, type Account, type Policy, type Result } from "./protocol";
+import {
+  assetURL,
+  assetPriority,
+  scriptReferences,
+  signingAsset,
+} from "./discovery";
+import {
+  prepareSigning,
+  signingIndices,
+  transactionId,
+  type SigningKey,
+} from "./transaction";
 
 export class XError extends Error {
   constructor(
@@ -25,6 +37,12 @@ export class XClient {
   private templates: Templates = {};
   private discoveryAt = 0;
   private abort: AbortController | null = null;
+  private signing: SigningKey | null = null;
+  private readEpoch = 0;
+  private assertRead(epoch: number): void {
+    if (epoch !== this.readEpoch)
+      throw new XError("cancelled", "Task paused before request.");
+  }
   private globalFeatures: Record<string, boolean> = {};
   observe(details: chrome.webRequest.OnBeforeSendHeadersDetails): void {
     if (details.initiator === `chrome-extension://${chrome.runtime.id}`) return;
@@ -50,6 +68,7 @@ export class XClient {
         for (const [k, v] of Object.entries(features))
           if (typeof v === "boolean") this.globalFeatures[k] = v;
         this.templates[match[2] as Operation] = {
+          source: "observed",
           id: match[1],
           variables: JSON.parse(url.searchParams.get("variables") ?? "{}"),
           features,
@@ -58,6 +77,7 @@ export class XClient {
           ),
         };
         void chrome.storage.session.set({
+          adapterRevision: 2,
           templates: this.templates,
           globalFeatures: this.globalFeatures,
         });
@@ -70,13 +90,18 @@ export class XClient {
     const saved = await chrome.storage.session.get<{
       webBearer?: string;
       templates?: Templates;
+      adapterRevision?: number;
       globalFeatures?: Record<string, boolean>;
-    }>(["webBearer", "templates", "globalFeatures"]);
+    }>(["webBearer", "templates", "globalFeatures", "adapterRevision"]);
     this.bearer ??= saved.webBearer ?? null;
-    this.templates = { ...saved.templates, ...this.templates };
+    this.templates = {
+      ...(saved.adapterRevision === 2 ? saved.templates : {}),
+      ...this.templates,
+    };
     this.globalFeatures = { ...saved.globalFeatures, ...this.globalFeatures };
   }
   cancelRead(): void {
+    this.readEpoch++;
     this.abort?.abort();
   }
   async ownerId(): Promise<string> {
@@ -100,72 +125,148 @@ export class XClient {
         "The signed-in X account changed. Reconnect before continuing.",
       );
   }
-  async discover(force = false): Promise<void> {
-    if (!force && Date.now() - this.discoveryAt < 60_000) return;
+  async discover(force = false, required?: Operation): Promise<void> {
+    if (
+      !force &&
+      Date.now() - this.discoveryAt < 60_000 &&
+      this.signing &&
+      (!required || this.templates[required])
+    )
+      return;
+    const epoch = this.readEpoch;
     const tabs = await chrome.tabs.query({ url: "https://x.com/*" });
     const tab = tabs.find((t) => t.active) ?? tabs[0];
     if (!tab?.id)
       throw new XError("tab_required", "Open an X tab in this Chrome profile.");
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
-        return [
+      func: () => ({
+        scripts: [
           ...new Set([
             ...Array.from(document.scripts, (s) => s.src),
+            ...Array.from(
+              document.querySelectorAll<HTMLLinkElement>(
+                'link[rel="modulepreload"]',
+              ),
+              (s) => s.href,
+            ),
             ...performance.getEntriesByType("resource").map((r) => r.name),
           ]),
-        ].filter(
-          (u) =>
-            u.startsWith("https://abs.twimg.com/responsive-web/") &&
-            /\.js(?:\?|$)/.test(u),
-        );
-      },
+        ]
+          .filter(
+            (u) =>
+              /^https:\/\/abs\.twimg\.com\/(?:responsive-web|x-web)\//.test(
+                u,
+              ) && /\.js(?:\?|$)/.test(u),
+          )
+          .slice(0, 200),
+        inline: Array.from(document.scripts)
+          .filter((s) => !s.src)
+          .map((s) => s.textContent ?? "")
+          .join("\n")
+          .slice(0, 2_000_000),
+        key:
+          document
+            .querySelector('meta[name="twitter-site-verification"]')
+            ?.getAttribute("content") ?? "",
+        frames: Array.from(
+          document.querySelectorAll(
+            'svg[id^="loading-x-anim"] g:first-child path:nth-child(2)',
+          ),
+          (p) => p.getAttribute("d") ?? "",
+        ),
+      }),
     });
-    const urls = (results[0]?.result ?? []) as string[];
-    urls.sort(
-      (a, b) => Number(b.includes("/main.")) - Number(a.includes("/main.")),
+    const page = results[0]?.result;
+    if (!page)
+      throw new XError(
+        "discovery_required",
+        "Could not read X's page; refresh the signed-in X tab.",
+      );
+    if (force) this.signing = null;
+    const queue = new Set<string>(
+      [
+        ...page.scripts,
+        ...scriptReferences(
+          page.inline,
+          "https://abs.twimg.com/responsive-web/client-web/main.js",
+        ),
+      ].filter((u) => assetURL(u)),
     );
-    for (const url of urls.slice(0, 16)) {
-      const parsed = new URL(url);
-      if (
-        parsed.origin !== "https://abs.twimg.com" ||
-        !parsed.pathname.startsWith("/responsive-web/")
-      )
-        continue;
-      try {
-        const response = await fetch(url, {
-          credentials: "omit",
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!response.ok) continue;
-        const script = await response.text();
-        if (script.length > 12_000_000) continue;
+    const seen = new Set<string>();
+    const deadline = Date.now() + 20_000;
+    while (queue.size && seen.size < 64 && Date.now() < deadline) {
+      if (epoch !== this.readEpoch)
+        throw new XError("cancelled", "Discovery paused.");
+      const batch = [...queue]
+        .sort((a, b) => assetPriority(a) - assetPriority(b))
+        .slice(0, Math.min(4, 64 - seen.size));
+      for (const url of batch) {
+        queue.delete(url);
+        seen.add(url);
+      }
+      const scripts = await Promise.all(
+        batch.map(async (url) => {
+          try {
+            const response = await fetch(url, {
+              credentials: "omit",
+              signal: AbortSignal.timeout(5_000),
+            });
+            if (!response.ok) return null;
+            const script = await response.text();
+            return script.length <= 12_000_000 ? { url, script } : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (epoch !== this.readEpoch)
+        throw new XError("cancelled", "Discovery paused.");
+      for (const asset of scripts) {
+        if (!asset) continue;
+        const { url, script } = asset;
+        for (const ref of scriptReferences(script, url))
+          if (!seen.has(ref) && queue.size < 1000) queue.add(ref);
         const ops = discoverOperations(script);
-        for (const op of OPERATIONS)
-          if (ops[op] && (force || !this.templates[op]))
-            this.templates[op] = {
-              ...ops[op],
-              ...this.templates[op],
-              id: ops[op]!.id,
-            };
+        for (const op of OPERATIONS) {
+          const old = this.templates[op];
+          if (ops[op] && old?.source !== "observed")
+            this.templates[op] = { ...ops[op], source: "bundle" };
+        }
+        if (!this.signing && signingAsset(url)) {
+          try {
+            this.signing = prepareSigning(page, signingIndices(script));
+          } catch {
+            /* Report unavailable signing before any API dispatch. */
+          }
+        }
         if (!this.bearer) {
           const token = script.match(
             /["'](AAAAAAAAAAAAAAAAAAAAA[A-Za-z0-9%_-]{50,})["']/,
           )?.[1];
           if (token) this.bearer = `Bearer ${decodeURIComponent(token)}`;
         }
-        if (
-          !force &&
-          OPERATIONS.every((op) => this.templates[op]) &&
-          this.bearer
-        )
-          break;
-      } catch {
-        /* Other loaded chunks or observed browser requests may supply the operation. */
       }
+      const ready =
+        ["Followers", "Following", "UserByRestId", "RemoveFollower"].every(
+          (op) => this.templates[op as Operation],
+        ) &&
+        ([
+          "UserOriginalsTimeline",
+          "UserRepliesTimeline",
+          "UserRepostsTimeline",
+        ].every((op) => this.templates[op as Operation]) ||
+          this.templates.UserTweetsAndReplies);
+      if (
+        this.signing &&
+        this.bearer &&
+        (required ? this.templates[required] : ready)
+      )
+        break;
     }
     this.discoveryAt = Date.now();
     await chrome.storage.session.set({
+      adapterRevision: 2,
       templates: this.templates,
       webBearer: this.bearer,
       globalFeatures: this.globalFeatures,
@@ -179,17 +280,18 @@ export class XClient {
         "discovery_required",
         "Refresh the X tab, then reconnect the extension to capture the current web session.",
       );
-    let handle = owner;
-    try {
-      handle = (await this.profile(owner)).handle || owner;
-    } catch (e) {
-      if (
-        e instanceof XError &&
-        ["rate_limited", "login_required", "account_changed"].includes(e.code)
-      )
-        throw e;
-    }
-    const capabilities = ["session", "inspect_account", "relationship"];
+    const handle = (await this.profile(owner)).handle;
+    if (!handle)
+      throw new XError(
+        "identity_unavailable",
+        "X did not return the signed-in account's handle.",
+      );
+    const capabilities = [
+      "adapter:2",
+      "session",
+      "inspect_account",
+      "relationship",
+    ];
     if (this.templates.Followers) capabilities.push("followers");
     if (this.templates.Following) capabilities.push("following");
     if (this.templates.RemoveFollower) capabilities.push("remove_follower");
@@ -203,6 +305,7 @@ export class XClient {
     writeOwner?: string,
     guard?: () => void,
   ): Promise<any> {
+    const epoch = this.readEpoch;
     if (!path.startsWith("/i/api/"))
       throw new XError("invalid_request", "Unsupported X path");
     const csrf = await chrome.cookies.get({
@@ -216,6 +319,18 @@ export class XClient {
       );
     const url = new URL(path, "https://x.com");
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+    if (!this.signing) await this.discover();
+    if (!this.signing)
+      throw new XError(
+        "signing_unavailable",
+        "X request signing could not be prepared. Refresh your signed-in X tab, Refresh X discovery, then retry.",
+      );
+    const tid = await transactionId(
+      this.signing,
+      body ? "POST" : "GET",
+      url.pathname,
+    );
+    this.assertRead(epoch);
     if (writeOwner) await this.assertOwner(writeOwner);
     guard?.();
     const controller = new AbortController();
@@ -227,6 +342,7 @@ export class XClient {
         credentials: "include",
         signal: controller.signal,
         headers: {
+          "x-client-transaction-id": tid,
           authorization: this.bearer,
           "x-csrf-token": csrf.value,
           "x-twitter-auth-type": "OAuth2Session",
@@ -254,13 +370,35 @@ export class XClient {
       if (!response.ok)
         throw new XError(
           `http_${response.status}`,
-          `X returned HTTP ${response.status}; this operation may need an adapter update.`,
+          `X returned HTTP ${response.status} for ${path.split("/").pop()}.`,
         );
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new XError(
+          "invalid_response",
+          `${path.split("/").pop()} returned non-JSON data; scan completeness is unknown.`,
+        );
+      }
+      if (epoch !== this.readEpoch)
+        throw new XError(
+          "cancelled",
+          "Task paused before response was accepted.",
+        );
+      if (
+        Array.isArray(data?.errors) &&
+        data.errors.some((e: { code?: number }) => e.code === 88)
+      )
+        throw new XError(
+          "rate_limited",
+          "X reported an API rate limit. Wait before resuming.",
+          Date.now() + 60_000,
+        );
       if (Array.isArray(data?.errors) && data.errors.length)
         throw new XError(
           "x_error",
-          `X rejected the operation (code ${data.errors[0]?.code ?? "unknown"}).`,
+          `${path.split("/").pop()} rejected the operation (code ${data.errors[0]?.code ?? "unknown"}).`,
         );
       return data;
     } finally {
@@ -281,25 +419,40 @@ export class XClient {
     op: Operation,
     variables: Record<string, unknown>,
   ): Promise<any> {
-    const t = this.template(op);
-    return this.request(`/i/api/graphql/${t.id}/${op}`, {
-      variables: JSON.stringify({ ...t.variables, ...variables }),
-      features: JSON.stringify({ ...t.features, ...this.globalFeatures }),
-      fieldToggles: JSON.stringify(t.fieldToggles),
-    });
+    const epoch = this.readEpoch;
+    if (!this.templates[op]) await this.discover(false, op);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      this.assertRead(epoch);
+      const t = this.template(op);
+      try {
+        return await this.request(`/i/api/graphql/${t.id}/${op}`, {
+          variables: JSON.stringify({ ...t.variables, ...variables }),
+          features: JSON.stringify(
+            t.source === "observed"
+              ? { ...this.globalFeatures, ...t.features }
+              : { ...t.features, ...this.globalFeatures },
+          ),
+          fieldToggles: JSON.stringify(t.fieldToggles),
+        });
+      } catch (e) {
+        this.assertRead(epoch);
+        if (!(e instanceof XError) || e.code !== "http_404") throw e;
+        if (attempt === 1)
+          throw new XError(
+            "http_404",
+            `${op} (${t.id}) still returned 404 after refreshing its query and signing data. Open that X page, refresh discovery, then retry. Saved progress is intact.`,
+          );
+        delete this.templates[op];
+        await this.discover(true, op);
+      }
+    }
+    throw new XError("operation_unavailable", `${op} unavailable`);
   }
   async profile(id: string): Promise<Account> {
-    let raw;
-    if (this.templates.UserByRestId)
-      raw = await this.graphql("UserByRestId", {
-        userId: id,
-        withSafetyModeUserFields: true,
-      });
-    else
-      raw = await this.request("/i/api/1.1/users/show.json", {
-        user_id: id,
-        include_entities: "false",
-      });
+    const raw = await this.graphql("UserByRestId", {
+      userId: id,
+      withSafetyModeUserFields: true,
+    });
     const account = profileResult(raw);
     if (account.id !== id)
       throw new XError("identity_mismatch", "X returned a different profile.");
@@ -307,7 +460,14 @@ export class XClient {
   }
   async relationship(
     id: string,
+    snapshot?: Account,
   ): Promise<{ follows_me: boolean; i_follow: boolean }> {
+    const account = snapshot ?? (await this.profile(id));
+    if (
+      typeof account.follows_me === "boolean" &&
+      typeof account.i_follow === "boolean"
+    )
+      return { follows_me: account.follows_me, i_follow: account.i_follow };
     return parseRelationship(
       await this.request("/i/api/1.1/friendships/lookup.json", { user_id: id }),
       id,
@@ -318,7 +478,9 @@ export class XClient {
     list: "followers" | "following",
     cursor: string | null,
   ): Promise<Result> {
+    const epoch = this.readEpoch;
     await this.assertOwner(owner);
+    this.assertRead(epoch);
     const op = list === "followers" ? "Followers" : "Following";
     const raw = await this.graphql(op, {
       userId: owner,
@@ -335,13 +497,24 @@ export class XClient {
     return { kind: "page", list, ...page };
   }
   async inspect(owner: string, id: string, policy: Policy): Promise<Account> {
+    const epoch = this.readEpoch;
     await this.assertOwner(owner);
+    this.assertRead(epoch);
     const account = await this.profile(id);
-    Object.assign(account, await this.relationship(id));
+    this.assertRead(epoch);
+    Object.assign(account, await this.relationship(id, account));
     await this.assertOwner(owner);
+    this.assertRead(epoch);
     account.checked_at_ms = Date.now();
     if (account.protected !== false) {
       account.activity_note = "Protected or unknown visibility; skipped.";
+      return account;
+    }
+    if (
+      (policy.skip_verified && account.verified !== false) ||
+      (policy.skip_following && account.i_follow !== false)
+    ) {
+      account.activity_note = "Excluded by verification or following policy.";
       return account;
     }
     if (account.posts === 0) {
@@ -349,38 +522,72 @@ export class XClient {
       return account;
     }
     const cutoff = Date.now() - policy.inactive_days * 86_400_000;
-    try {
-      let raw;
-      if (this.templates.UserTweetsAndReplies) {
-        raw = await this.graphql("UserTweetsAndReplies", {
+    const modern = [
+      "UserOriginalsTimeline",
+      "UserRepliesTimeline",
+      "UserRepostsTimeline",
+    ] as const;
+    if (!modern.every((op) => this.templates[op])) await this.discover();
+    if (modern.every((op) => this.templates[op])) {
+      const evidence = [];
+      for (const op of modern) {
+        this.assertRead(epoch);
+        const raw = await this.graphql(op, {
           userId: id,
+          cursor: undefined,
           count: 40,
           includePromotedContent: false,
           withCommunity: true,
           withVoice: true,
         });
-      } else
-        raw = await this.request("/i/api/1.1/statuses/user_timeline.json", {
-          user_id: id,
-          count: "40",
-          include_rts: "true",
-          exclude_replies: "false",
-          tweet_mode: "extended",
-        });
+        const part = postingEvidence(
+          raw,
+          id,
+          cutoff,
+          op === "UserRepostsTimeline",
+        );
+        evidence.push(part);
+        // One recent action is sufficient to protect the account.
+        if (part.latest !== null && part.latest > cutoff) break;
+      }
+      const times = evidence.flatMap((e) =>
+        e.latest === null ? [] : [e.latest],
+      );
+      account.last_activity_ms = times.length ? Math.max(...times) : null;
+      const recent =
+        account.last_activity_ms !== null && account.last_activity_ms > cutoff;
+      account.coverage_since_ms =
+        recent ||
+        (evidence.length === 3 && evidence.every((e) => e.coverage !== null))
+          ? cutoff
+          : null;
+      account.activity_note = recent
+        ? "Recent post, reply or repost observed."
+        : account.coverage_since_ms !== null
+          ? "Posts, replies and reposts all predate the cutoff."
+          : "One or more activity timelines lack adequate evidence; kept unknown.";
+    } else if (this.templates.UserTweetsAndReplies) {
+      this.assertRead(epoch);
+      const raw = await this.graphql("UserTweetsAndReplies", {
+        userId: id,
+        cursor: undefined,
+        count: 40,
+        includePromotedContent: false,
+        withCommunity: true,
+        withVoice: true,
+      });
       const evidence = postingEvidence(raw, id, cutoff);
       account.last_activity_ms = evidence.latest;
       account.coverage_since_ms = evidence.coverage;
       account.activity_note = evidence.note;
-    } catch (e) {
-      if (
-        e instanceof XError &&
-        ["rate_limited", "account_changed", "login_required"].includes(e.code)
-      )
-        throw e;
-      account.activity_note =
-        "Activity lookup failed or was inaccessible; kept unknown.";
+    } else {
+      throw new XError(
+        "operation_unavailable",
+        "Activity operations are missing. Open a profile's Posts, Replies and Reposts tabs on X, refresh discovery, then retry.",
+      );
     }
     await this.assertOwner(owner);
+    this.assertRead(epoch);
     return account;
   }
   async remove(

@@ -28,7 +28,7 @@ fn fixture() -> App {
         .set("scan:1", &forgive_me::app::Scan::default())
         .unwrap();
     let mut app = App::new(store, false).unwrap();
-    app.capabilities = vec!["remove_follower".into()];
+    app.capabilities = vec!["remove_follower".into(), "adapter:2".into()];
     app
 }
 fn key(c: char) -> KeyEvent {
@@ -139,4 +139,49 @@ fn focused_target_matches_clamped_highlight() {
     let mut app = fixture();
     app.focus = 100;
     assert_eq!(app.focused().as_deref(), Some("2"));
+}
+#[tokio::test]
+async fn old_adapter_scans_refresh_before_resuming_and_keep_exceptions() {
+    let mut app = fixture();
+    app.scan.phase = "followers".into();
+    app.scan.following_complete = true;
+    app.accounts.get_mut("2").unwrap().kept = true;
+    let (tx, mut rx) = mpsc::channel(8);
+    app.sender = Some(tx);
+    app.paused = false;
+    app.tick().await.unwrap();
+    assert!(app.paused);
+    assert!(rx.try_recv().is_err());
+    app.key(key('s')).await.unwrap();
+    assert_eq!(app.scan.adapter_revision, 2);
+    assert_eq!(app.scan.phase, "following");
+    assert!(app.accounts["2"].kept);
+    assert_eq!(app.accounts["2"].follows_me, None);
+    assert_eq!(app.accounts["2"].i_follow, None);
+    assert_eq!(rx.recv().await.unwrap()["type"], "resume");
+}
+#[test]
+fn unknown_verification_is_inspected_but_never_selected() {
+    let mut app = fixture();
+    let account = app.accounts.get_mut("2").unwrap();
+    account.verified = None;
+    assert!(account.basic_candidate(&app.policy));
+    assert_eq!(
+        account.reason(&app.policy, now_ms()),
+        Err("Verification not checked")
+    );
+}
+#[tokio::test]
+async fn an_outdated_browser_cannot_resume_saved_work_or_start_a_scan() {
+    let mut app = fixture();
+    app.capabilities.clear();
+    app.scan.adapter_revision = 2;
+    app.scan.phase = "followers".into();
+    app.paused = false;
+    let (tx, mut rx) = mpsc::channel(8);
+    app.sender = Some(tx);
+    app.tick().await.unwrap();
+    assert!(app.paused);
+    assert!(app.key(key('s')).await.is_err());
+    assert!(rx.try_recv().is_err());
 }

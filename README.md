@@ -4,7 +4,7 @@ A small, local X follower cleaner. **Ratatui controls it. Chrome does the X work
 
 Scan your followers, review accounts matching your cleanup policy, keep exceptions, and remove the selected followers. There is no hosted service, subscription, AI model, or external database.
 
-**Status:** runnable implementation with a fake-account demo and automated tests. The private X adapter has not been qualified against a signed-in live account. Discovery of an operation is not proof that X accepts it. No live followers were removed during development.
+**Status:** v0.1.2 hardens the adapter after a live run collected following data but failed on the first followers request. The updated signing, schema, discovery and activity paths pass automated regression tests; a fresh live follower scan is still needed to qualify this build. No live followers were removed during development.
 
 ## Install from your terminal (Apple Silicon macOS)
 
@@ -37,11 +37,11 @@ To use your real account:
 5. Confirm the displayed account, press Enter to open followers, then `s` to scan. It collects following, then followers, then assesses candidates. Future launches open the follower list; `Shift+P` reopens pairing and pauses work.
 6. Review evidence with Enter; `K` keeps an account. `m` shows matching accounts, `a` selects matches, and `d` reviews a capped batch. Enter cancels; only `y` approves removal.
 
-Keep Chrome and the terminal open during work. Reconnects start the controller paused. If an X operation is unavailable, refresh the relevant X page, choose **Refresh X discovery**, then reconnect. Incompatible responses stop work or leave evidence unknown; they are not treated as proof of inactivity.
+Keep Chrome and the terminal open during work. The header names the scan phase and labels incomplete inventories. Known mutuals found while collecting following are not a completed follower scan. Reconnects start the controller paused. If an X operation is unavailable, refresh the relevant X page, choose **Refresh X discovery**, then reconnect. Incompatible responses stop work or leave evidence unknown; they are not treated as proof of inactivity.
 
 ## Update, select a version, or uninstall
 
-Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions`. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
+Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions` and **Save & connect** in its settings. For v0.1.2, refresh your signed-in X tab and press `s`: old adapter scans are rebuilt so missing counts and verification fields are recollected. Your keep list and action history are preserved. The TUI refuses work from an outdated browser adapter. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
 
 ```sh
 # Pin an available release instead of installing latest:
@@ -96,7 +96,7 @@ Setup stays paused; cleanup shortcuts are inactive there. `p` and `c` remain res
 
 The single Rust executable hosts the TUI, controller, embedded SQLite and a WebSocket listener bound to `127.0.0.1`. The MV3 extension connects with a random pairing secret; the first authenticated connection pins its extension ID. A versioned, bounded protocol carries normalized account facts and named commands. X cookies and authorization headers stay in Chrome.
 
-The extension discovers current GraphQL operations from observed X requests and loaded X JavaScript, using the existing browser session. It fetches graph pages and candidate activity, then rechecks identity and eligibility immediately before each native `RemoveFollower` request. It never substitutes unfollowing or block/unblock. Removal shrinks your incoming follower list; public accounts can be followed again.
+The extension discovers current GraphQL operations from observed X requests and loaded X JavaScript, using the existing browser session. Static discovery supports both responsive-web/webpack and x-web/Vite assets, follows bounded relative imports, and reads Relay query definitions without executing downloaded scripts. It generates a fresh `x-client-transaction-id` for each request inside Chrome. A read that returns 404 can refresh its query/signing data and retry once; mutation requests are never automatically retried. It fetches graph pages and candidate activity, then rechecks identity and eligibility immediately before each native `RemoveFollower` request. Modern activity checks cover Posts, Replies and Reposts separately. A recent action protects the account immediately; missing or ambiguous channel evidence keeps inactivity unknown. Counts use current `relationship_counts`/`tweet_counts` fields with legacy compatibility. It never substitutes unfollowing or block/unblock. Removal shrinks your incoming follower list; public accounts can be followed again.
 
 There is one outstanding task. The controller saves every attempted removal before dispatch; the extension journals its own dispatch/result receipt. Results are acknowledged after database persistence. Lost responses become **uncertain** and require a read-only relationship reconciliation. Neither restart nor a lost acknowledgement blindly repeats a write. SQLite records and progress are partitioned by owner ID.
 

@@ -17,6 +17,8 @@ use tokio::sync::mpsc;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Scan {
+    #[serde(default)]
+    pub adapter_revision: u8,
     pub phase: String,
     pub cursor: Option<String>,
     pub cursors: BTreeSet<String>,
@@ -193,18 +195,26 @@ impl App {
         self.save_scan().await
     }
     async fn start_scan(&mut self) -> Result<()> {
+        if !self.demo && !self.capabilities.iter().any(|c| c == "adapter:2") {
+            bail!("Reload forgive-me in chrome://extensions, then Save & connect before scanning");
+        }
         if self.owner.is_empty() || self.sender.is_none() {
             bail!("Connect Chrome and identify the signed-in account first");
         }
         if self.batch.is_some() || self.uncertain > 0 {
             bail!("Finish/cancel the removal queue and reconcile uncertain actions first (r)");
         }
-        if self.scan.phase.is_empty() || self.scan.phase == "done" {
+        if self.pending.is_some() {
+            bail!("Wait for the current browser task before starting a scan");
+        }
+        if self.scan.phase.is_empty() || self.scan.phase == "done" || self.scan.adapter_revision < 2
+        {
             for a in self.accounts.values_mut() {
                 a.follows_me = None;
                 a.i_follow = None;
             }
             self.scan = Scan {
+                adapter_revision: 2,
                 phase: "following".into(),
                 started_at: now_ms(),
                 ..Default::default()
@@ -527,6 +537,16 @@ impl App {
         {
             return Ok(());
         }
+        if !self.demo && !self.capabilities.iter().any(|c| c == "adapter:2") {
+            self.paused = true;
+            self.log("Chrome adapter needs an update. Reload the extension, then Save & connect.");
+            return Ok(());
+        }
+        if !self.demo && self.scan.adapter_revision < 2 && !self.scan.phase.is_empty() {
+            self.paused = true;
+            self.log("Saved scan uses the old X adapter. Press s to refresh account evidence; keep choices are preserved.");
+            return Ok(());
+        }
         if let Some(batch) = &mut self.batch {
             let batch_id = batch.id.clone();
             let finished = self
@@ -603,6 +623,7 @@ impl App {
                     self.mode = Mode::Browse;
                 }
                 self.handle.clear();
+                self.capabilities.clear();
                 self.confirmation.clear();
                 self.selected.clear();
                 self.sender = Some(sender);
@@ -741,6 +762,11 @@ impl App {
                 if !matches!(w.command, Command::GetSession) {
                     bail!("Unexpected session response");
                 }
+                if !self.demo && !capabilities.iter().any(|c| c == "adapter:2") {
+                    bail!(
+                        "Chrome extension is out of date. Reload forgive-me in chrome://extensions, then Save & connect."
+                    );
+                }
                 if owner_id.is_empty() || handle.is_empty() {
                     bail!("X did not identify a signed-in account. Sign in, then retry (r).");
                 }
@@ -874,7 +900,15 @@ impl App {
                     .await?;
                 }
                 self.paused = true;
-                self.log(format!("{code}: {message}. Work paused."));
+                let task = match &w.command {
+                    Command::ScanPage { list, .. } => format!("{list} collection"),
+                    Command::InspectAccount { .. } => "activity check".into(),
+                    _ => "browser task".into(),
+                };
+                self.log(format!(
+                    "Paused during {task}: {code}: {}",
+                    message.trim_end_matches('.')
+                ));
                 if let Some(retry) = retry_at_ms {
                     self.next_at =
                         Instant::now() + Duration::from_millis((retry - now_ms()).max(0) as u64);

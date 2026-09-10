@@ -62,7 +62,7 @@ impl Account {
     pub fn basic_candidate(&self, p: &Policy) -> bool {
         !self.kept
             && self.follows_me == Some(true)
-            && (!p.skip_verified || self.verified == Some(false))
+            && (!p.skip_verified || self.verified != Some(true))
             && (!p.skip_following || self.i_follow != Some(true))
     }
 
@@ -74,10 +74,18 @@ impl Account {
             return Err("Follower relationship unknown / absent");
         }
         if p.skip_verified && self.verified != Some(false) {
-            return Err("Verified / verification unknown");
+            return Err(if self.verified == Some(true) {
+                "Verified"
+            } else {
+                "Verification not checked"
+            });
         }
         if p.skip_following && self.i_follow != Some(false) {
-            return Err("Following / relationship unknown");
+            return Err(if self.i_follow == Some(true) {
+                "You follow this account"
+            } else {
+                "Following relationship unknown"
+            });
         }
         if self.protected != Some(false) {
             return Err("Protected / visibility unknown");

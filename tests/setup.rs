@@ -87,7 +87,7 @@ async fn setup_waits_for_identity_and_never_resumes_work() {
         WorkResult::Session {
             owner_id: "1".into(),
             handle: "example".into(),
-            capabilities: vec![],
+            capabilities: vec!["adapter:2".into()],
         },
     )
     .await;
@@ -126,7 +126,7 @@ async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
         WorkResult::Session {
             owner_id: "1".into(),
             handle: "example".into(),
-            capabilities: vec![],
+            capabilities: vec!["adapter:2".into()],
         },
     )
     .await;

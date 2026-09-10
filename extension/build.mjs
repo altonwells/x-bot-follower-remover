@@ -22,6 +22,6 @@ if (process.argv.includes("--test")) {
     target: "chrome116",
     sourcemap: true,
   });
-  for (const file of ["manifest.json", "options.html", "options.css"])
+  for (const file of ["manifest.json", "options.html", "options.css", "THIRD_PARTY_LICENSES.txt"])
     await copyFile(file, `dist/${file}`);
 }

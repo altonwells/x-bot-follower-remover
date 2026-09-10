@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, app: &App, tick: u64) {
         return;
     }
     let layout = Layout::vertical([
-        Constraint::Length(5),
+        Constraint::Length(6),
         Constraint::Min(3),
         Constraint::Length(4),
     ])
@@ -97,7 +97,7 @@ pub fn render(frame: &mut Frame, app: &App, tick: u64) {
             ))
         } else {
             Line::from(format!(
-                " {} followers loaded  ·  {} match  ·  {} selected  ·  {} removed  ·  {} uncertain",
+                " {} known followers  ·  {} match  ·  {} selected  ·  {} removed  ·  {} uncertain",
                 app.accounts
                     .values()
                     .filter(|a| a.follows_me == Some(true))
@@ -131,6 +131,19 @@ pub fn render(frame: &mut Frame, app: &App, tick: u64) {
             } else {
                 "[all collected followers]"
             }
+        )),
+        Line::from(Span::styled(
+            format!(
+                " Scan: {}",
+                match app.scan.phase.as_str() {
+                    "following" => "collecting accounts you follow · follower inventory incomplete",
+                    "followers" => "collecting followers · inventory incomplete",
+                    "inspect" => "checking activity · follower inventory collected",
+                    "done" => "complete",
+                    _ => "not started",
+                }
+            ),
+            Style::default().fg(MUTED),
         )),
     ];
     frame.render_widget(Paragraph::new(header), layout[0]);

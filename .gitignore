@@ -6,3 +6,6 @@ extension/.test-build/
 *.sqlite*
 .DS_Store
 .test-data/
+/references/twikit/
+/references/twscrape/
+/references/twitter-web-exporter/

@@ -1,0 +1,30 @@
+{
+  "checked_on": "2026-09-10",
+  "selection": "Top three by stars among 12 relevant candidates, unarchived with a push within the preceding year. Latest default-branch checkouts; reference-only, not dependencies.",
+  "repositories": [
+    {
+      "repository": "d60/twikit",
+      "stars": 4662,
+      "commit": "c3b7220866f8582009fe2d1155b6fe92192a2711",
+      "last_commit": "2026-03-10T19:19:43+09:00",
+      "folder": "twikit",
+      "url": "https://github.com/d60/twikit"
+    },
+    {
+      "repository": "vladkens/twscrape",
+      "stars": 2758,
+      "commit": "55ac729f39fbbe46e316746a55627a9ed920112c",
+      "last_commit": "2026-08-28T18:40:06+03:00",
+      "folder": "twscrape",
+      "url": "https://github.com/vladkens/twscrape"
+    },
+    {
+      "repository": "prinsss/twitter-web-exporter",
+      "stars": 2694,
+      "commit": "ddf2b0c823680b904daae166f3eb05b81950ce7e",
+      "last_commit": "2026-08-31T12:20:07+08:00",
+      "folder": "twitter-web-exporter",
+      "url": "https://github.com/prinsss/twitter-web-exporter"
+    }
+  ]
+}
