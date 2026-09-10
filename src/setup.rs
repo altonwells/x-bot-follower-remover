@@ -1,11 +1,14 @@
-use crate::{app::App, config::Config};
+use crate::{
+    app::App,
+    config::Config,
+    theme::{self, *},
+};
 use anyhow::Result;
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Layout},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 use std::path::PathBuf;
 
@@ -84,27 +87,19 @@ pub fn render(frame: &mut Frame, app: &App) {
         return;
     };
     let area = frame.area();
-    let width = area.width.min(94);
-    let area = Rect::new(
-        area.x + (area.width - width) / 2,
-        area.y,
-        width,
-        area.height,
-    );
+    let area = centered(area, area.width.saturating_sub(4).min(96), area.height);
     let [header, body, footer] = Layout::vertical([
-        Constraint::Length(4),
+        Constraint::Length(if area.height >= 24 { 6 } else { 4 }),
         Constraint::Min(2),
         Constraint::Length(4),
     ])
     .areas(area);
-    let accent = Style::default()
-        .fg(Color::Rgb(194, 165, 255))
-        .add_modifier(Modifier::BOLD);
-    let muted = Style::default().fg(Color::Rgb(140, 148, 160));
+    let accent = bold(MINT);
+    let muted = fg(MUTED);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled(" forgive-me / setup", accent)),
-            Line::from(" Your terminal controls it. Chrome does the X work."),
+            Line::from(Span::styled(" ◈ forgive-me  /  FIRST CONNECTION", accent)),
+            Line::styled(" Your terminal controls it. Chrome does the X work.", muted),
             Line::from(Span::styled(
                 match setup.step {
                     Step::Install => " [1 Install]  →  2 Pair  →  3 Connect",
@@ -172,23 +167,15 @@ pub fn render(frame: &mut Frame, app: &App) {
     };
     frame.render_widget(
         Paragraph::new(text)
-            .block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .title(title)
-                    .border_style(accent),
-            )
+            .block(theme::panel(title).border_style(fg(ICE)))
             .wrap(Wrap { trim: false })
             .scroll((setup.scroll, 0)),
         body,
     );
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled(
-                app.notice.clone(),
-                Style::default().fg(Color::Yellow),
-            )),
-            Line::from(keys),
+            Line::from(Span::styled(app.notice.clone(), fg(AMBER))),
+            Line::styled(keys, fg(ICE)),
             Line::from(Span::styled(" ↑ ↓ scroll instructions", muted)),
         ])
         .wrap(Wrap { trim: false }),

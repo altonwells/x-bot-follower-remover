@@ -68,3 +68,17 @@ Validation: `cargo test --offline --locked` exited 0 (23 passed), `cargo clippy 
 Simplify review removed duplicated cancellation/relationship guards and a redundant completeness condition (net −9 implementation lines). Review also reproduced and fixed a CSRF-cookie cancellation race and inherited activity cursors; dedicated regressions now cover both. Initial focused baseline was 19 Rust tests plus Clippy and 39 extension tests; final suites retain those passes and add regressions. Broader cancellation of already-running asset downloads was left unchanged: batches are bounded and do not dispatch cleanup work.
 
 A new live scan is required after reloading the extension. No follower removal was performed in this update.
+
+## Visual and fullscreen update (v0.1.3)
+
+Rebuilt the TUI presentation with an explicit full-screen palette, responsive dashboard, live evidence inspector, refined setup and review panels, and the display-only cleanup ritual. No eligibility, queue approval, persistence, browser requests or protocol semantics changed. Help/detail scroll offsets are clamped to rendered content. Small confirmation dialogs keep both the irreversible-action warning and default-cancel controls visible. Motion remains bounded at 10 FPS and animated frames avoid follower-inventory traversal.
+
+Ratatui already used the alternate screen. This update adds mouse capture so wheel input stays in the app, routes wheel events only to navigation, rejects noninteractive output, redraws on resize, and releases capture on normal/error/panic exit. The PTY test emulates cursor-position queries, checks alternate-screen and mouse enable/disable sequences, scrolls the inventory/help, resizes from 120×34 to 52×12 to 140×42, exits with q, and verifies no newline-based scrolling output.
+
+Rendered fictional fixtures with Ratatui's TestBackend and an offscreen AppKit renderer; visually inspected dashboard, compact/minimum layout, removal review, policy, pairing, and cleanse scenes. Preview generation is reproducible through `examples/preview.rs` and `scripts/render-preview.swift`. Ratatui remains pinned to 0.30.2; its rendered-line-info feature is used to clamp wrapped dialog content precisely. No new runtime dependency was added.
+
+Verification: full `cargo test --offline --locked` exited 0 (27 passed). The sandbox initially denied localhost binds in two bridge tests; rerunning with local socket permission passed. Focused baseline and final `cargo test --offline --lib --test controller --test setup --test presentation` both exited 0 (24 passed), and `cargo clippy --offline --all-targets -- -D warnings` exited 0 before and after review. Extension `npm ci --offline`, `npm run check`, and `npm test` exited 0 (41 tests passed).
+
+Simplify review: reused `theme::centered` in setup and removed an unnecessary manual resize clear already performed by Ratatui (net −6 lines, one fewer terminal I/O call per resize). Quality review was clean. An additional Details inventory traversal was left alone because eliminating it required broader borrow/parameter restructuring. No live X account was scanned or modified.
+
+Release compilation and extension bundling passed. `python3 tests/install_test.py` exited 0 (`Ran 7 tests`, `OK`); `python3 tests/terminal_test.py target/release/forgive-me` exited 0 (`Ran 1 test`, `OK`). The PTY lifecycle check used the optimized release binary.

@@ -3,13 +3,13 @@ use crate::{
     app::{App, Mode},
     model::clean,
     protocol::Command,
+    theme::*,
 };
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 pub fn visible(app: &App) -> bool {
@@ -21,10 +21,9 @@ pub fn animating(app: &App) -> bool {
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
     let active = animating(app);
-    let phase = if active { (tick % 12) as usize } else { 0 };
-    let block = Block::bordered()
-        .title(" forgive-me · the cleanse ")
-        .border_style(Style::default().fg(Color::Rgb(100, 85, 125)));
+    let phase = if active { (tick % 16) as usize } else { 0 };
+    let block = panel(" THE CLEANSE ")
+        .title_top(Line::styled(" ONE ACCOUNT AT A TIME ", fg(MUTED)).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let owner = format!("@{}", clean(&app.handle));
@@ -56,89 +55,109 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
             )
         })
         .unwrap_or_else(|| "Finishing this batch…".into());
-    if inner.height < 12 || inner.width < 58 {
-        // A compact presentation keeps controls and real progress visible on small terminals.
+    if inner.height < 15 || inner.width < 75 {
         frame.render_widget(
             Paragraph::new(vec![
-                Line::from(format!("{counter} · {owner}")),
-                Line::from(format!(
-                    "--(_)> {} X  {target}",
-                    if active && phase % 2 == 0 { ":" } else { "." }
-                )),
-                Line::from(state),
+                Line::styled(format!("{counter} · {owner}"), bold(MINT)),
+                Line::styled(
+                    format!(
+                        "--(_)> {} X  {target}",
+                        if active && phase % 2 == 0 { ":" } else { "." }
+                    ),
+                    fg(ICE),
+                ),
+                Line::styled(state, fg(if active { MUTED } else { AMBER })),
             ]),
             inner,
         );
         return;
     }
-    let columns = Layout::horizontal([Constraint::Length(27), Constraint::Min(25)]).split(inner);
-    let pouring = active && phase >= 2;
-    let ladle = if pouring {
-        [r"    \", r"     \", r"      \________", r"       \_______\"]
-    } else {
-        [r"    \", r"     \", r"      \________", r"       \______/ "]
-    };
-    let mut art: Vec<Line> = ladle
-        .into_iter()
-        .map(|s| Line::styled(s, Style::default().fg(Color::Rgb(217, 194, 152))))
-        .collect();
-    for row in 0..2 {
-        let water = if pouring && (phase + row) % 3 != 0 {
-            "              :"
-        } else {
-            "               "
-        };
-        art.push(Line::styled(water, Style::default().fg(Color::Cyan)));
-    }
-    for line in [
-        r"          \\   /",
-        r"           \\ /",
-        r"            XX",
-        r"           / \\",
-        r"          /   \\",
-    ] {
+    let stage = centered(inner, 91, 19);
+    let [art_area, detail] = Layout::horizontal([Constraint::Length(39), Constraint::Min(30)])
+        .spacing(3)
+        .areas(stage);
+    let pouring = active && phase >= 3;
+    let mut art = vec![
+        Line::styled("          ╲", fg(MUTED)),
+        Line::styled("           ╲", fg(MUTED)),
+        Line::styled("            ╲_________", fg(TEXT)),
+        Line::styled(
+            if pouring {
+                "             ╲________╲"
+            } else {
+                "             ╲________/"
+            },
+            fg(TEXT),
+        ),
+    ];
+    for row in 0..3 {
         art.push(Line::styled(
-            line,
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            if pouring {
+                match (phase + row) % 4 {
+                    0 => "                      ╎",
+                    1 => "                     ·┊",
+                    2 => "                      ┊·",
+                    _ => "                     ╎╎",
+                }
+            } else {
+                ""
+            },
+            fg(ICE),
         ));
     }
-    let splash = if pouring && phase % 2 == 0 {
-        "       .  ~  .  ~  ."
-    } else {
-        "          ~     ~"
-    };
+    for line in [
+        "              ██       ██",
+        "               ██     ██",
+        "                ██   ██",
+        "                 ██ ██",
+        "                  ███",
+        "                 ██ ██",
+        "                ██   ██",
+        "               ██     ██",
+        "              ██       ██",
+    ] {
+        art.push(Line::styled(line, bold(TEXT)));
+    }
     art.push(Line::styled(
-        if active { splash } else { "" },
-        Style::default().fg(Color::Cyan),
+        if pouring {
+            if phase % 2 == 0 {
+                "          ·  ˙  ~  ·  ~  ˙  ·"
+            } else {
+                "            ~  ·  ˙  ~  ·  ~"
+            }
+        } else {
+            ""
+        },
+        fg(ICE),
     ));
-    frame.render_widget(Paragraph::new(art), columns[0]);
+    art.push(Line::styled("           ─────────────────", fg(BORDER)));
+    frame.render_widget(Paragraph::new(art), art_area);
     let remaining = app.batch.as_ref().map_or(0, |b| b.ids.len());
+    let cadence = app
+        .batch
+        .as_ref()
+        .map_or(app.policy.delay_seconds, |b| b.policy.delay_seconds);
     frame.render_widget(
         Paragraph::new(vec![
             Line::from(""),
-            Line::styled(
-                owner,
-                Style::default()
-                    .fg(Color::Rgb(194, 165, 255))
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Line::styled("A FRESH START", fg(MUTED)),
+            Line::styled(owner, bold(ICE)),
+            Line::from(""),
+            Line::styled(counter, bold(MINT)),
+            Line::styled("Verified removals · account total", fg(MUTED)),
             Line::from(""),
             Line::styled(
-                counter,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                format!("{remaining} queued  /  {cadence}s interval"),
+                fg(TEXT),
             ),
-            Line::from("Verified removals · total for this account"),
-            Line::from(format!("{remaining} remaining in this batch")),
+            Line::styled(target, fg(ICE)),
             Line::from(""),
-            Line::from(target),
+            Line::styled(state, fg(if active { MINT } else { AMBER })),
             Line::from(""),
-            Line::from(state),
+            Line::styled("A little less noise.", fg(MUTED)),
+            Line::styled("A little more you.", fg(MUTED)),
         ])
         .wrap(Wrap { trim: false }),
-        columns[1],
+        detail,
     );
 }

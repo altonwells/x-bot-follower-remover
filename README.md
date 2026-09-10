@@ -4,7 +4,11 @@ A small, local X follower cleaner. **Ratatui controls it. Chrome does the X work
 
 Scan your followers, review accounts matching your cleanup policy, keep exceptions, and remove the selected followers. There is no hosted service, subscription, AI model, or external database.
 
-**Status:** v0.1.2 hardens the adapter after a live run collected following data but failed on the first followers request. The updated signing, schema, discovery and activity paths pass automated regression tests; a fresh live follower scan is still needed to qualify this build. No live followers were removed during development.
+**Status:** v0.1.3 adds a full visual redesign and fullscreen mouse/resize handling. The v0.1.2 X adapter changes remain in place; a fresh live follower scan is still needed to qualify endpoint compatibility. No live followers were removed during development.
+
+![The follower dashboard, rendered with fictional preview data](docs/previews/dashboard.png)
+
+The terminal uses a dedicated alternate screen: fixed header and controls, an internally scrolling inventory, and mouse-wheel navigation. Wide windows show account evidence beside the list; smaller windows adapt down to 52×12. Help and detail panels scroll internally. `q` or Ctrl-C saves and restores your shell. Hold your terminal's selection modifier (often Shift or Option) to select text while mouse capture is active.
 
 ## Install from your terminal (Apple Silicon macOS)
 
@@ -41,7 +45,7 @@ Keep Chrome and the terminal open during work. The header names the scan phase a
 
 ## Update, select a version, or uninstall
 
-Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions` and **Save & connect** in its settings. For v0.1.2, refresh your signed-in X tab and press `s`: old adapter scans are rebuilt so missing counts and verification fields are recollected. Your keep list and action history are preserved. The TUI refuses work from an outdated browser adapter. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
+Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions` and **Save & connect** in its settings. When upgrading from before v0.1.2, refresh your signed-in X tab and press `s`: old adapter scans are rebuilt so missing counts and verification fields are recollected. Your keep list and action history are preserved. The TUI refuses work from an outdated browser adapter. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
 
 ```sh
 # Pin an available release instead of installing latest:
@@ -129,6 +133,14 @@ npm test
 cd ..
 ./scripts/package.sh
 python3 tests/install_test.py
+python3 tests/terminal_test.py target/release/forgive-me
+```
+
+To render the UI's fictional fixtures without a browser (macOS):
+
+```sh
+cargo run --example preview > /tmp/forgive-me-preview.json
+swift scripts/render-preview.swift /tmp/forgive-me-preview.json /tmp/forgive-me-previews
 ```
 
 The packaging script produces the native executable for the current machine, an unpacked extension and its ZIP. It does not install the extension or change your X account. See [verification](docs/VERIFICATION.md) for tested behavior and remaining live checks, and [protocol](protocol/README.md) for the browser boundary.

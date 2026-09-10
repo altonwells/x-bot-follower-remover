@@ -53,6 +53,7 @@ pub struct App {
     pub query: String,
     pub mode: Mode,
     pub filter_row: usize,
+    pub modal_scroll: u16,
     pub paused: bool,
     pub scan: Scan,
     pub batch: Option<Batch>,
@@ -93,6 +94,7 @@ impl App {
             query: String::new(),
             mode: Mode::Browse,
             filter_row: 0,
+            modal_scroll: 0,
             paused: true,
             scan,
             batch,
@@ -331,11 +333,20 @@ impl App {
                 return Ok(());
             }
             Mode::Details | Mode::Help => {
-                if matches!(
-                    key.code,
-                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('?')
-                ) {
-                    self.mode = Mode::Browse;
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?') => {
+                        self.mode = Mode::Browse
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.modal_scroll = self.modal_scroll.saturating_add(1)
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.modal_scroll = self.modal_scroll.saturating_sub(1)
+                    }
+                    KeyCode::PageDown => self.modal_scroll = self.modal_scroll.saturating_add(10),
+                    KeyCode::PageUp => self.modal_scroll = self.modal_scroll.saturating_sub(10),
+                    KeyCode::Home => self.modal_scroll = 0,
+                    _ => {}
                 }
                 return Ok(());
             }
@@ -363,8 +374,14 @@ impl App {
             }
             KeyCode::PageUp => self.focus = self.focus.saturating_sub(15),
             KeyCode::Char('/') => self.mode = Mode::Search,
-            KeyCode::Char('?') => self.mode = Mode::Help,
-            KeyCode::Enter => self.mode = Mode::Details,
+            KeyCode::Char('?') => {
+                self.modal_scroll = 0;
+                self.mode = Mode::Help;
+            }
+            KeyCode::Enter => {
+                self.modal_scroll = 0;
+                self.mode = Mode::Details;
+            }
             KeyCode::Char('f') => {
                 if self.batch.is_some() {
                     bail!("Cancel the current batch before changing filters");

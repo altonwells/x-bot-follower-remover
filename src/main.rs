@@ -1,6 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use crossterm::event::{Event, EventStream, KeyEventKind};
+use crossterm::{
+    event::{
+        DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent,
+        KeyEventKind, KeyModifiers, MouseEventKind,
+    },
+    execute,
+};
 use forgive_me::{
     app::App,
     bridge::{self, BridgeEvent},
@@ -14,6 +20,7 @@ use fs2::FileExt;
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::{
+    io::{IsTerminal, stdout},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -133,24 +140,46 @@ async fn run(
     mut bridge: mpsc::Receiver<BridgeEvent>,
     no_animation: bool,
 ) -> Result<()> {
-    let mut terminal = ratatui::init();
+    anyhow::ensure!(
+        std::io::stdin().is_terminal() && stdout().is_terminal(),
+        "Open forgive-me in an interactive terminal (no pipes or output redirection)."
+    );
     struct Restore;
     impl Drop for Restore {
         fn drop(&mut self) {
+            let _ = execute!(stdout(), DisableMouseCapture);
             ratatui::restore();
         }
     }
     let _restore = Restore;
+    // Ratatui owns the full alternate screen and raw mode. Capture wheel events
+    // as navigation so terminal emulators do not scroll the shell behind it.
+    let mut terminal = ratatui::try_init()?;
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(stdout(), DisableMouseCapture);
+        previous_hook(info);
+    }));
+    execute!(stdout(), EnableMouseCapture)?;
+    terminal.clear()?;
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(Duration::from_millis(100));
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let animation_clock = std::time::Instant::now();
-    terminal.draw(|f| ui::render(f, &app, 0))?;
+    terminal.draw(|f| ui::render(f, &mut app, 0))?;
     let mut refresh = tokio::time::Instant::now();
     while !app.quit {
         let mut redraw = true;
         let result = tokio::select! {
-         event=keys.next()=>match event{Some(Ok(Event::Key(key)))if key.kind==KeyEventKind::Press=>app.key(key).await,Some(Ok(_))=>Ok(()),Some(Err(e))=>Err(e.into()),None=>{app.quit=true;Ok(())}},
+         event = keys.next() => match event {
+            Some(Ok(Event::Resize(_, _))) => Ok(()),
+            Some(Ok(event)) => match navigation_key(event) {
+                Some(key) => app.key(key).await,
+                None => { redraw = false; Ok(()) },
+            },
+            Some(Err(e)) => Err(e.into()),
+            None => { app.quit = true; Ok(()) },
+         },
          event=bridge.recv()=>match event{Some(event)=>app.bridge_event(event).await,None=>{app.quit=true;Ok(())}},
          _=clock.tick()=>{
             if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at) { redraw = false; }
@@ -166,7 +195,7 @@ async fn run(
             terminal.draw(|f| {
                 ui::render(
                     f,
-                    &app,
+                    &mut app,
                     if no_animation {
                         0
                     } else {
@@ -179,6 +208,19 @@ async fn run(
     }
     Ok(())
 }
+// Mouse actions only navigate. They can never select or approve a removal.
+fn navigation_key(event: Event) -> Option<KeyEvent> {
+    match event {
+        Event::Key(key) if key.kind == KeyEventKind::Press => Some(key),
+        Event::Mouse(mouse) => match mouse.kind {
+            MouseEventKind::ScrollDown => Some(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+            MouseEventKind::ScrollUp => Some(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn demo_accounts() -> Vec<Account> {
     let now = now_ms();
     let specs = [

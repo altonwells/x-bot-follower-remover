@@ -32,7 +32,7 @@ async fn result(app: &mut App, result: WorkResult) {
     .await
     .unwrap();
 }
-fn screen(app: &App, width: u16, height: u16) -> String {
+fn screen(app: &mut App, width: u16, height: u16) -> String {
     let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
     term.draw(|f| ui::render(f, app, 0)).unwrap();
     term.backend()
@@ -92,7 +92,7 @@ async fn setup_waits_for_identity_and_never_resumes_work() {
     )
     .await;
     assert!(app.setup.as_ref().unwrap().step == Step::Ready);
-    assert!(screen(&app, 94, 26).contains("Connected as @example"));
+    assert!(screen(&mut app, 94, 26).contains("Connected as @example"));
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(app.mode, Mode::Browse);
     assert!(app.paused);
@@ -112,7 +112,7 @@ async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
     press(&mut app, KeyCode::Enter).await;
     press(&mut app, KeyCode::Char('v')).await;
     let token = app.setup.as_ref().unwrap().token.clone();
-    assert!(screen(&app, 94, 26).contains(&token));
+    assert!(screen(&mut app, 94, 26).contains(&token));
     let (tx, _rx) = mpsc::channel(16);
     app.bridge_event(BridgeEvent::Connected {
         session_id: "browser".into(),
@@ -136,7 +136,7 @@ async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
     press(&mut app, KeyCode::Enter).await;
     assert_eq!(app.mode, Mode::Setup);
     assert!(app.setup.as_ref().unwrap().step == Step::Connect);
-    assert!(!screen(&app, 94, 26).contains("Connected as @example"));
+    assert!(!screen(&mut app, 94, 26).contains("Connected as @example"));
 }
 
 #[test]
@@ -166,7 +166,7 @@ async fn instructions_render_at_supported_sizes_and_secret_is_opt_in() {
     for step in [Step::Install, Step::Pair, Step::Connect, Step::Ready] {
         app.setup.as_mut().unwrap().go(step);
         for (w, h) in [(94, 26), (52, 12), (30, 8)] {
-            assert!(!screen(&app, w, h).contains(&token));
+            assert!(!screen(&mut app, w, h).contains(&token));
         }
     }
     app.mode = Mode::Browse;
