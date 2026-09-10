@@ -29,7 +29,7 @@ pub const HELP: &[(&str, &str)] = &[
 ];
 const ACCENT: Color = Color::Rgb(194, 165, 255);
 const MUTED: Color = Color::Rgb(140, 148, 160);
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &App, tick: u64) {
     let area = frame.area();
     if area.width < 52 || area.height < 12 {
         frame.render_widget(
@@ -55,6 +55,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     } else {
         "Scanning"
     };
+    let ritual_visible = crate::ritual::visible(app);
     let header = vec![
         Line::from(vec![
             Span::styled(
@@ -82,17 +83,26 @@ pub fn render(frame: &mut Frame, app: &App) {
                 }),
             ),
         ]),
-        Line::from(format!(
-            " {} followers loaded  ·  {} match  ·  {} selected  ·  {} removed  ·  {} uncertain",
-            app.accounts
-                .values()
-                .filter(|a| a.follows_me == Some(true))
-                .count(),
-            app.matches(),
-            app.selected.len(),
-            app.removed,
-            app.uncertain
-        )),
+        if ritual_visible {
+            Line::from(format!(
+                " {} selected  ·  {} verified removals  ·  {} uncertain",
+                app.selected.len(),
+                app.removed,
+                app.uncertain
+            ))
+        } else {
+            Line::from(format!(
+                " {} followers loaded  ·  {} match  ·  {} selected  ·  {} removed  ·  {} uncertain",
+                app.accounts
+                    .values()
+                    .filter(|a| a.follows_me == Some(true))
+                    .count(),
+                app.matches(),
+                app.selected.len(),
+                app.removed,
+                app.uncertain
+            ))
+        },
         Line::from(Span::styled(
             format!(
                 " {} days inactive / zero posts: {}  ·  skip verified: {}  ·  skip following: {}",
@@ -119,82 +129,92 @@ pub fn render(frame: &mut Frame, app: &App) {
         )),
     ];
     frame.render_widget(Paragraph::new(header), layout[0]);
-    let rows = app.visible();
+    let rows = if ritual_visible {
+        vec![]
+    } else {
+        app.visible()
+    };
     let now = now_ms();
     let focused = app.focus.min(rows.len().saturating_sub(1));
     let height = usize::from(layout[1].height.saturating_sub(4)).max(1);
     let offset = focused.saturating_sub(height - 1);
-    let table_rows = rows.iter().skip(offset).take(height).map(|a| {
-        let activity = if a.checked_at_ms.is_none() {
-            "Not checked".into()
-        } else if a.posts == Some(0) {
-            "Zero posts".into()
-        } else if let Some(t) = a.last_activity_ms {
-            format!("{}d ago", ((now - t) / 86_400_000).max(0))
-        } else {
-            "Unknown".into()
-        };
-        let reason = a.reason(&app.policy, now);
-        let style = Style::default().fg(if a.kept {
-            MUTED
-        } else if reason.is_ok() {
-            Color::Green
-        } else {
-            Color::Reset
-        });
-        Row::new(vec![
-            Cell::from(if a.kept {
-                "keep"
-            } else if app.selected.contains(&a.id) {
-                "[x]"
+    if ritual_visible {
+        crate::ritual::render(frame, app, layout[1], tick);
+    } else {
+        let table_rows = rows.iter().skip(offset).take(height).map(|a| {
+            let activity = if a.checked_at_ms.is_none() {
+                "Not checked".into()
+            } else if a.posts == Some(0) {
+                "Zero posts".into()
+            } else if let Some(t) = a.last_activity_ms {
+                format!("{}d ago", ((now - t) / 86_400_000).max(0))
             } else {
-                "[ ]"
-            }),
-            Cell::from(format!("@{}", clean(&a.handle))),
-            Cell::from(activity),
-            Cell::from(format!(
-                "{} / {}",
-                count(a.followers),
-                count(a.following_count)
-            )),
-            Cell::from(reason.unwrap_or_else(|s| s)),
-        ])
-        .style(style)
-    });
-    let table = Table::new(
-        table_rows,
-        [
-            Constraint::Length(5),
-            Constraint::Percentage(25),
-            Constraint::Length(13),
-            Constraint::Length(17),
-            Constraint::Min(10),
-        ],
-    )
-    .header(
-        Row::new(["", "Account", "Activity", "Fans / Following", "Reason"])
-            .style(Style::default().fg(MUTED))
-            .bottom_margin(1),
-    )
-    .block(
-        Block::default()
-            .borders(Borders::TOP | Borders::BOTTOM)
-            .border_style(Style::default().fg(MUTED)),
-    )
-    .row_highlight_style(
-        Style::default()
-            .bg(Color::Rgb(45, 37, 63))
-            .add_modifier(Modifier::BOLD),
-    );
-    let mut state =
-        TableState::default().with_selected((!rows.is_empty()).then_some(focused - offset));
-    frame.render_stateful_widget(table, layout[1], &mut state);
-    if rows.is_empty() {
-        let r = layout[1];
-        frame.render_widget(
-            Paragraph::new("\n  No followers here yet. Connect the Chrome extension and press s."),
-            Rect::new(r.x, r.y + 1, r.width, r.height.saturating_sub(2)),
+                "Unknown".into()
+            };
+            let reason = a.reason(&app.policy, now);
+            let style = Style::default().fg(if a.kept {
+                MUTED
+            } else if reason.is_ok() {
+                Color::Green
+            } else {
+                Color::Reset
+            });
+            Row::new(vec![
+                Cell::from(if a.kept {
+                    "keep"
+                } else if app.selected.contains(&a.id) {
+                    "[x]"
+                } else {
+                    "[ ]"
+                }),
+                Cell::from(format!("@{}", clean(&a.handle))),
+                Cell::from(activity),
+                Cell::from(format!(
+                    "{} / {}",
+                    count(a.followers),
+                    count(a.following_count)
+                )),
+                Cell::from(reason.unwrap_or_else(|s| s)),
+            ])
+            .style(style)
+        });
+        let table = Table::new(
+            table_rows,
+            [
+                Constraint::Length(5),
+                Constraint::Percentage(25),
+                Constraint::Length(13),
+                Constraint::Length(17),
+                Constraint::Min(10),
+            ],
+        )
+        .header(
+            Row::new(["", "Account", "Activity", "Fans / Following", "Reason"])
+                .style(Style::default().fg(MUTED))
+                .bottom_margin(1),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::TOP | Borders::BOTTOM)
+                .border_style(Style::default().fg(MUTED)),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(45, 37, 63))
+                .add_modifier(Modifier::BOLD),
         );
+        let mut state =
+            TableState::default().with_selected((!rows.is_empty()).then_some(focused - offset));
+        frame.render_stateful_widget(table, layout[1], &mut state);
+        if rows.is_empty() {
+            let r = layout[1];
+            frame.render_widget(
+                Paragraph::new(
+                    "\n  No followers here yet. Connect the Chrome extension and press s.",
+                ),
+                Rect::new(r.x, r.y + 1, r.width, r.height.saturating_sub(2)),
+            );
+        }
     }
     frame.render_widget(
         Paragraph::new(vec![
@@ -202,8 +222,16 @@ pub fn render(frame: &mut Frame, app: &App) {
                 format!(" {}", app.notice),
                 Style::default().fg(Color::Yellow),
             )),
-            Line::from(" s scan   f filters   Space select   a matching   K keep   d remove"),
-            Line::from(" p pause   r reconcile   Enter details   / search   ? help   q quit"),
+            Line::from(if ritual_visible {
+                " p pause/resume   c cancel   q quit"
+            } else {
+                " s scan   f filters   Space select   a matching   K keep   d remove"
+            }),
+            Line::from(if ritual_visible {
+                " Enter details   ? help"
+            } else {
+                " p pause   c cancel   r reconcile   Enter details   ? help   q quit"
+            }),
         ])
         .wrap(Wrap { trim: false }),
         layout[2],
@@ -328,7 +356,7 @@ mod tests {
         for (w, h) in [(100, 30), (52, 12), (30, 8)] {
             let app = App::new(Store::open(Path::new(":memory:")).unwrap(), true).unwrap();
             let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-            term.draw(|f| render(f, &app)).unwrap();
+            term.draw(|f| render(f, &app, 0)).unwrap();
         }
     }
 }

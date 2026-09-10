@@ -14,7 +14,7 @@ The prepared native binary is `dist/forgive-me`; the unpacked extension is `dist
 ./dist/forgive-me --demo
 ```
 
-The demo uses six fictional accounts and an in-memory database. Try `a`, `d`, then Enter to cancel; `d`, then `y` runs fake removals.
+The demo uses six fictional accounts and an in-memory database. Try `a`, `d`, then Enter to cancel; `d`, then `y` runs fake removals. During a batch, a ladle pours water onto an X beside your handle, the current target, and **“Reseting followers”**—a counter of verified removals. The illustration pauses when work stops; small terminals get a compact version. Use `--no-animation` for a still illustration.
 
 To use your real account:
 

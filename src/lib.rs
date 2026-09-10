@@ -3,5 +3,6 @@ pub mod bridge;
 pub mod config;
 pub mod model;
 pub mod protocol;
+pub mod ritual;
 pub mod store;
 pub mod ui;

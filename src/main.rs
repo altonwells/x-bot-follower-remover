@@ -34,6 +34,11 @@ struct Args {
         help = "Explore the complete interface with fake accounts; no browser or X access"
     )]
     demo: bool,
+    #[arg(
+        long,
+        help = "Show a still cleanup illustration instead of moving water"
+    )]
+    no_animation: bool,
     #[command(subcommand)]
     command: Option<CliCommand>,
 }
@@ -64,7 +69,7 @@ async fn main() -> Result<()> {
             })
             .await?;
         let worker = tokio::spawn(demo_worker(rx, events_tx, records));
-        let result = run(app, events_rx).await;
+        let result = run(app, events_rx, args.no_animation).await;
         worker.abort();
         return result;
     }
@@ -118,11 +123,15 @@ async fn main() -> Result<()> {
         .context("Local bridge port unavailable; use --port to choose another")?;
     let app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
     let bridge = tokio::spawn(bridge::serve(listener, config, dir, events_tx));
-    let result = run(app, events_rx).await;
+    let result = run(app, events_rx, args.no_animation).await;
     bridge.abort();
     result
 }
-async fn run(mut app: App, mut bridge: mpsc::Receiver<BridgeEvent>) -> Result<()> {
+async fn run(
+    mut app: App,
+    mut bridge: mpsc::Receiver<BridgeEvent>,
+    no_animation: bool,
+) -> Result<()> {
     let mut terminal = ratatui::init();
     struct Restore;
     impl Drop for Restore {
@@ -133,7 +142,9 @@ async fn run(mut app: App, mut bridge: mpsc::Receiver<BridgeEvent>) -> Result<()
     let _restore = Restore;
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(Duration::from_millis(100));
-    terminal.draw(|f| ui::render(f, &app))?;
+    clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let animation_clock = std::time::Instant::now();
+    terminal.draw(|f| ui::render(f, &app, 0))?;
     let mut refresh = tokio::time::Instant::now();
     while !app.quit {
         let mut redraw = true;
@@ -141,7 +152,7 @@ async fn run(mut app: App, mut bridge: mpsc::Receiver<BridgeEvent>) -> Result<()
          event=keys.next()=>match event{Some(Ok(Event::Key(key)))if key.kind==KeyEventKind::Press=>app.key(key).await,Some(Ok(_))=>Ok(()),Some(Err(e))=>Err(e.into()),None=>{app.quit=true;Ok(())}},
          event=bridge.recv()=>match event{Some(event)=>app.bridge_event(event).await,None=>{app.quit=true;Ok(())}},
          _=clock.tick()=>{
-            if app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at { redraw = false; }
+            if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at) { redraw = false; }
             app.tick().await
          },
         };
@@ -151,7 +162,17 @@ async fn run(mut app: App, mut bridge: mpsc::Receiver<BridgeEvent>) -> Result<()
             app.log(format!("{e:#}"));
         }
         if redraw || refresh.elapsed() >= Duration::from_secs(30) {
-            terminal.draw(|f| ui::render(f, &app))?;
+            terminal.draw(|f| {
+                ui::render(
+                    f,
+                    &app,
+                    if no_animation {
+                        0
+                    } else {
+                        (animation_clock.elapsed().as_millis() / 100) as u64
+                    },
+                )
+            })?;
             refresh = tokio::time::Instant::now();
         }
     }
