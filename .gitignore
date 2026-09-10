@@ -6,4 +6,3 @@ extension/.test-build/
 *.sqlite*
 .DS_Store
 .test-data/
-
