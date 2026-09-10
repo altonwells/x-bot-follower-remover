@@ -1,0 +1,9 @@
+/target/
+/dist/
+extension/node_modules/
+extension/dist/
+extension/.test-build/
+*.sqlite*
+.DS_Store
+.test-data/
+

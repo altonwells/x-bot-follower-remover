@@ -1,0 +1,30 @@
+[package]
+name = "forgive-me"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A local Ratatui control plane for a Chrome-based X follower cleaner"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+dirs = "6"
+fs2 = "0.4"
+futures-util = { version = "0.3", features = ["sink"] }
+getrandom = "0.3"
+ratatui = "=0.30.2"
+rusqlite = { version = "0.39", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+subtle = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal"] }
+tokio-tungstenite = "0.26.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true

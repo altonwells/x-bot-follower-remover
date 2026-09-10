@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "forgive-me",
+  "description": "Browser workloads for the forgive-me terminal follower cleaner. All account actions are controlled from your local TUI.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "cookies", "scripting", "webRequest"],
+  "host_permissions": ["https://x.com/*", "https://abs.twimg.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "options_page": "options.html",
+  "action": { "default_title": "forgive-me · connection settings" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://x.com https://abs.twimg.com ws://127.0.0.1:*"
+  }
+}

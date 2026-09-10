@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>forgive-me · Connect Chrome</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">YOUR TERMINAL. YOUR ACCOUNT.</p>
+      <h1>forgive-me<span>.</span></h1>
+      <p class="intro">
+        Chrome does the work.<br />Your terminal stays in control.
+      </p>
+      <section>
+        <h2>Connect to your TUI</h2>
+        <p>
+          Run <code>forgive-me pair</code> in your terminal. Copy the pairing
+          secret below, then start <code>forgive-me</code>.
+        </p>
+        <form id="pair">
+          <label for="port">Local port</label
+          ><input
+            id="port"
+            name="port"
+            type="number"
+            value="47831"
+            min="1024"
+            max="65535"
+            required
+          />
+          <label for="token">Pairing secret</label
+          ><input
+            id="token"
+            name="token"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            minlength="64"
+            maxlength="64"
+            required
+            placeholder="Paste the secret from your terminal"
+          />
+          <div class="buttons">
+            <button type="submit">Save & connect</button
+            ><button id="disconnect" type="button" class="secondary">
+              Disconnect
+            </button>
+          </div>
+        </form>
+        <p id="status" role="status" aria-live="polite">Checking connection…</p>
+      </section>
+      <section class="secondary-section">
+        <h2>Prepare X</h2>
+        <p>
+          Keep an X tab open and signed in. If the TUI reports a missing
+          operation, visit your followers page and refresh the X tab, then
+          refresh discovery here and reconnect.
+        </p>
+        <button id="discover" class="secondary">Refresh X discovery</button>
+      </section>
+      <footer>
+        Selection and removal happen in the TUI. Your X session stays in Chrome.
+        Browser automation uses private X interfaces and may trigger account
+        restrictions.
+      </footer>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forgive-me bridge v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "hello"
+        },
+        "v": {
+          "const": 1
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "extension_id": {
+          "type": "string",
+          "pattern": "^[a-p]{32}$"
+        }
+      },
+      "required": [
+        "type",
+        "v",
+        "token",
+        "extension_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "welcome"
+        },
+        "v": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "v",
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "command"
+        },
+        "v": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "work": {
+          "$ref": "#/$defs/work"
+        }
+      },
+      "required": [
+        "type",
+        "v",
+        "session_id",
+        "work"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "result"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "result": {
+          "$ref": "#/$defs/result"
+        }
+      },
+      "required": [
+        "type",
+        "session_id",
+        "command_id",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "recovery"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "work": {
+          "$ref": "#/$defs/work"
+        },
+        "result": {
+          "$ref": "#/$defs/result"
+        }
+      },
+      "required": [
+        "type",
+        "session_id",
+        "work",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "ack"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "session_id",
+        "command_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "heartbeat"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "pause"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "resume"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "cancel"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "properties": {
+        "inactive_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "skip_verified": {
+          "type": "boolean"
+        },
+        "skip_following": {
+          "type": "boolean"
+        },
+        "include_zero_posts": {
+          "type": "boolean"
+        },
+        "delay_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300
+        },
+        "batch_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "inactive_days",
+        "skip_verified",
+        "skip_following",
+        "include_zero_posts",
+        "delay_seconds",
+        "batch_limit"
+      ],
+      "additionalProperties": false
+    },
+    "account": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "bio": {
+          "type": "string"
+        },
+        "activity_note": {
+          "type": "string"
+        },
+        "followers": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "following_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "posts": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_activity_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "coverage_since_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "checked_at_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "verified": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "protected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "follows_me": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "i_follow": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "observed_at_ms": {
+          "type": "integer"
+        },
+        "kept": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "handle",
+        "name",
+        "bio",
+        "activity_note",
+        "followers",
+        "following_count",
+        "posts",
+        "last_activity_ms",
+        "coverage_since_ms",
+        "checked_at_ms",
+        "verified",
+        "protected",
+        "follows_me",
+        "i_follow",
+        "observed_at_ms",
+        "kept"
+      ],
+      "additionalProperties": false
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "get_session"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scan_page"
+            },
+            "list": {
+              "enum": [
+                "followers",
+                "following"
+              ]
+            },
+            "cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "list",
+            "cursor"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "inspect_account"
+            },
+            "target_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "policy": {
+              "$ref": "#/$defs/policy"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "policy"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "remove_follower"
+            },
+            "target_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "batch_id": {
+              "type": "string"
+            },
+            "policy": {
+              "$ref": "#/$defs/policy"
+            },
+            "deadline_ms": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "batch_id",
+            "policy",
+            "deadline_ms"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "reconcile"
+            },
+            "target_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "original_command_id": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "original_command_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "open_profile"
+            },
+            "target_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "work": {
+      "type": "object",
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "command": {
+          "$ref": "#/$defs/command"
+        }
+      },
+      "required": [
+        "command_id",
+        "owner_id",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "session"
+            },
+            "owner_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "handle": {
+              "type": "string"
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "owner_id",
+            "handle",
+            "capabilities"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "page"
+            },
+            "list": {
+              "enum": [
+                "followers",
+                "following"
+              ]
+            },
+            "accounts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/account"
+              }
+            },
+            "next_cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "list",
+            "accounts",
+            "next_cursor",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "account"
+            },
+            "account": {
+              "$ref": "#/$defs/account"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "action"
+            },
+            "target_id": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "status": {
+              "enum": [
+                "verified_removed",
+                "already_absent",
+                "skipped",
+                "failed",
+                "uncertain"
+              ]
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "status",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "opened"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "error"
+            },
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "retry_at_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "code",
+            "message",
+            "retry_at_ms"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+ "now_ms":20000000000,
+ "policy":{"inactive_days":90,"skip_verified":true,"skip_following":true,"include_zero_posts":true,"delay_seconds":10,"batch_limit":50},
+ "account":{"id":"9007199254740993","handle":"fixture","name":"Fixture","bio":"","followers":10,"following_count":1000,"posts":4,"verified":false,"protected":false,"follows_me":true,"i_follow":false,"last_activity_ms":null,"coverage_since_ms":0,"checked_at_ms":20000000000,"observed_at_ms":20000000000,"activity_note":"fixture","kept":false},
+ "cases":[
+  {"name":"covered inactivity","changes":{},"eligible":true},
+  {"name":"blue verification","changes":{"verified":true},"eligible":false},
+  {"name":"unknown verification","changes":{"verified":null},"eligible":false},
+  {"name":"mutual","changes":{"i_follow":true},"eligible":false},
+  {"name":"partial following","changes":{"i_follow":null},"eligible":false},
+  {"name":"protected","changes":{"protected":true},"eligible":false},
+  {"name":"lookup failure","changes":{"coverage_since_ms":null},"eligible":false},
+  {"name":"zero current posts","changes":{"posts":0,"coverage_since_ms":null},"eligible":true},
+  {"name":"unchecked zero","changes":{"posts":0,"checked_at_ms":null},"eligible":false},
+  {"name":"recent repost","changes":{"last_activity_ms":19999999999},"eligible":false},
+  {"name":"keep overrides match","changes":{"kept":true},"eligible":false},
+  {"name":"stale evidence","changes":{"checked_at_ms":1000},"eligible":false},
+  {"name":"unknown incoming relationship","changes":{"follows_me":null},"eligible":false}
+ ]
+}
