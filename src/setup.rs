@@ -29,6 +29,7 @@ impl Setup {
     pub fn new(config: &Config) -> Self {
         let bundled = std::env::current_exe()
             .ok()
+            .and_then(|p| p.canonicalize().ok())
             .and_then(|p| p.parent().map(|p| p.join("forgive-me-extension")))
             .filter(|p| p.join("manifest.json").is_file());
         Self {
