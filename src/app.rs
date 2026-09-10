@@ -2,6 +2,7 @@ use crate::{
     bridge::BridgeEvent,
     model::{Account, Policy, clean, new_id, now_ms},
     protocol::{ClientMessage, Command, VERSION, Work, WorkResult},
+    setup::{Setup, Step},
     store::{Storage, Store},
 };
 use anyhow::{Result, bail};
@@ -30,6 +31,7 @@ pub struct Batch {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mode {
+    Setup,
     Browse,
     Search,
     Filters,
@@ -38,6 +40,7 @@ pub enum Mode {
     Confirm,
 }
 pub struct App {
+    pub setup: Option<Setup>,
     pub store: Storage,
     pub owner: String,
     pub handle: String,
@@ -77,6 +80,7 @@ impl App {
         let batch = store.get(&format!("batch:{owner}"))?.flatten();
         let (removed, uncertain) = store.action_counts(&owner)?;
         Ok(Self {
+            setup: None,
             store: Storage::new(store),
             owner,
             handle: String::new(),
@@ -103,6 +107,13 @@ impl App {
             demo,
             only_matching: false,
         })
+    }
+    pub fn configure_setup(&mut self, config: &crate::config::Config) {
+        self.setup = Some(Setup::new(config));
+        if config.extension_id.is_none() || self.owner.is_empty() {
+            self.mode = Mode::Setup;
+            self.log("Welcome. Let's connect your Chrome extension.");
+        }
     }
     pub fn visible(&self) -> Vec<&Account> {
         let q = self.query.to_lowercase();
@@ -218,6 +229,9 @@ impl App {
             self.quit = true;
             return Ok(());
         }
+        if self.mode == Mode::Setup {
+            return self.setup_key(key).await;
+        }
         // Stop controls remain available in every modal, including search.
         match key.code {
             KeyCode::Char('p') => {
@@ -315,9 +329,17 @@ impl App {
                 }
                 return Ok(());
             }
-            Mode::Browse => {}
+            Mode::Browse | Mode::Setup => {}
         }
         match key.code {
+            KeyCode::Char('P') if self.setup.is_some() => {
+                self.pause().await?;
+                self.confirmation.clear();
+                let setup = self.setup.as_mut().unwrap();
+                setup.go(Step::Pair);
+                self.mode = Mode::Setup;
+                self.log("Pairing guide. Work is paused.");
+            }
             KeyCode::Char('q') => {
                 self.pause().await?;
                 self.quit = true;
@@ -425,6 +447,56 @@ impl App {
         }
         Ok(())
     }
+    async fn setup_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(setup) = self.setup.as_mut() else {
+            return Ok(());
+        };
+        match key.code {
+            KeyCode::Char('q') => {
+                self.pause().await?;
+                self.quit = true;
+            }
+            KeyCode::Char('v') if setup.step == Step::Pair => setup.revealed = !setup.revealed,
+            KeyCode::Char('y') if matches!(setup.step, Step::Install | Step::Pair) => {
+                let (value, label) = if setup.step == Step::Install {
+                    (
+                        setup.extension_dir.display().to_string(),
+                        "Extension folder",
+                    )
+                } else {
+                    (setup.token.clone(), "Pairing secret")
+                };
+                crate::setup::copy(value).await?;
+                self.log(format!("{label} copied. Paste it in Chrome."));
+            }
+            KeyCode::Enter | KeyCode::Right => match setup.step {
+                Step::Install => setup.go(Step::Pair),
+                Step::Pair => setup.go(Step::Connect),
+                Step::Ready => {
+                    self.mode = Mode::Browse;
+                    self.log("Connected. Press s to scan, then review your followers.");
+                }
+                Step::Connect => {}
+            },
+            KeyCode::Esc | KeyCode::Left => match setup.step {
+                Step::Pair => setup.go(Step::Install),
+                Step::Connect => setup.go(Step::Pair),
+                _ => {}
+            },
+            KeyCode::Down | KeyCode::PageDown => {
+                setup.scroll = setup.scroll.saturating_add(1).min(40)
+            }
+            KeyCode::Up | KeyCode::PageUp => setup.scroll = setup.scroll.saturating_sub(1),
+            KeyCode::Char('r') if self.sender.is_some() && self.pending.is_none() => {
+                setup.go(Step::Connect);
+                self.handle.clear();
+                self.submit(Command::GetSession).await?;
+                self.log("Checking the signed-in X account…");
+            }
+            _ => {}
+        }
+        Ok(())
+    }
     fn adjust(&mut self, d: i32) {
         match self.filter_row {
             0 => {
@@ -446,7 +518,8 @@ impl App {
         }
     }
     pub async fn tick(&mut self) -> Result<()> {
-        if self.paused
+        if self.mode == Mode::Setup
+            || self.paused
             || self.pending.is_some()
             || self.sender.is_none()
             || Instant::now() < self.next_at
@@ -524,7 +597,12 @@ impl App {
     pub async fn bridge_event(&mut self, event: BridgeEvent) -> Result<()> {
         match event {
             BridgeEvent::Connected { session_id, sender } => {
-                self.mode = Mode::Browse;
+                if self.mode == Mode::Setup {
+                    self.setup.as_mut().unwrap().go(Step::Connect);
+                } else {
+                    self.mode = Mode::Browse;
+                }
+                self.handle.clear();
                 self.confirmation.clear();
                 self.selected.clear();
                 self.sender = Some(sender);
@@ -535,7 +613,12 @@ impl App {
                 self.log("Chrome connected. Checking signed-in account…");
             }
             BridgeEvent::Disconnected(message) => {
-                self.mode = Mode::Browse;
+                if self.mode == Mode::Setup {
+                    self.setup.as_mut().unwrap().go(Step::Connect);
+                } else {
+                    self.mode = Mode::Browse;
+                }
+                self.handle.clear();
                 self.confirmation.clear();
                 self.sender = None;
                 self.session.clear();
@@ -658,7 +741,12 @@ impl App {
                 if !matches!(w.command, Command::GetSession) {
                     bail!("Unexpected session response");
                 }
-                self.mode = Mode::Browse;
+                if owner_id.is_empty() || handle.is_empty() {
+                    bail!("X did not identify a signed-in account. Sign in, then retry (r).");
+                }
+                if self.mode != Mode::Setup {
+                    self.mode = Mode::Browse;
+                }
                 self.confirmation.clear();
                 self.paused = true;
                 self.owner = owner_id;
@@ -682,6 +770,9 @@ impl App {
                 self.scan = scan;
                 self.batch = batch;
                 self.refresh_counts().await?;
+                if self.mode == Mode::Setup {
+                    self.setup.as_mut().unwrap().go(Step::Ready);
+                }
                 self.log("Ready. s scans; p resumes saved work; r reconciles uncertain actions.");
             }
             WorkResult::Page {

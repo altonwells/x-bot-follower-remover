@@ -4,5 +4,6 @@ pub mod config;
 pub mod model;
 pub mod protocol;
 pub mod ritual;
+pub mod setup;
 pub mod store;
 pub mod ui;

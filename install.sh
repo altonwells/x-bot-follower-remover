@@ -134,7 +134,7 @@ PATH_BLOCK
     fi
     printf '\nInstalled %s\nCommand: %s/forgive-me\nChrome extension: %s/bundle/forgive-me-extension\n\n' "$installed_version" "$bin_dir" "$install_dir"
     case ":$PATH:" in *":$bin_dir:"*) ;; *) printf '%s\n' 'Open a new terminal, or add the binary directory to PATH in this terminal.' ;; esac
-    printf '%s\n' 'Next: forgive-me --demo, or forgive-me pair.' 'In chrome://extensions, enable Developer mode and Load unpacked using the extension path above.' 'For updates, quit the TUI, rerun this installer, then Reload the extension in Chrome.'
+    printf '%s\n' 'Next: run forgive-me for guided setup, or forgive-me --demo.' 'In chrome://extensions, enable Developer mode and Load unpacked using the extension path above.' 'For updates, quit the TUI, rerun this installer, then Reload the extension in Chrome.'
 }
 
 main "$@"

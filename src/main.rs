@@ -121,7 +121,8 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, config.port))
         .await
         .context("Local bridge port unavailable; use --port to choose another")?;
-    let app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
+    let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
+    app.configure_setup(&config);
     let bridge = tokio::spawn(bridge::serve(listener, config, dir, events_tx));
     let result = run(app, events_rx, args.no_animation).await;
     bridge.abort();

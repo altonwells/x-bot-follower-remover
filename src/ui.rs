@@ -25,6 +25,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("p", "Pause / resume"),
     ("c", "Cancel pending removals"),
     ("r", "Reconcile one uncertain action"),
+    ("Shift+P", "Open pairing guide (pauses work)"),
     ("q / Ctrl-C", "Pause, save and quit"),
 ];
 const ACCENT: Color = Color::Rgb(194, 165, 255);
@@ -37,6 +38,10 @@ pub fn render(frame: &mut Frame, app: &App, tick: u64) {
                 .wrap(Wrap { trim: true }),
             area,
         );
+        return;
+    }
+    if app.mode == Mode::Setup {
+        crate::setup::render(frame, app);
         return;
     }
     let layout = Layout::vertical([
@@ -230,7 +235,7 @@ pub fn render(frame: &mut Frame, app: &App, tick: u64) {
             Line::from(if ritual_visible {
                 " Enter details   ? help"
             } else {
-                " p pause   c cancel   r reconcile   Enter details   ? help   q quit"
+                " p pause   c cancel   r reconcile   P pair   ? help   q quit"
             }),
         ])
         .wrap(Wrap { trim: false }),

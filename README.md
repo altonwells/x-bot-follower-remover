@@ -30,11 +30,11 @@ The demo uses six fictional accounts and an in-memory database. Try `a`, `d`, th
 
 To use your real account:
 
-1. Run `forgive-me pair` and copy its port and pairing secret.
-2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `~/.local/share/forgive-me/bundle/forgive-me-extension/` (the directory containing `manifest.json`).
-3. Open X in that Chrome profile and sign in. Visit your following and followers pages to expose current web request definitions.
-4. Start `forgive-me`. Click the extension icon, paste the pairing settings, and choose **Save & connect**.
-5. Verify the account shown in the terminal. Press `s` to scan. It collects following, then followers, then assesses candidates.
+1. Run `forgive-me`. First launch opens a guided setup screen.
+2. Follow **Install** to load the extension in Chrome. Press `y` to copy its folder path; use Cmd+Shift+G in Chrome's folder chooser to paste it. If already loaded, press Enter.
+3. In **Pair**, open the extension from Chrome's puzzle icon, enter the displayed port, press `y` to copy the secret, paste it into the extension, and click **Save & connect**. The secret stays hidden unless you press `v`.
+4. Keep X open and signed in. Setup detects Chrome and checks the account automatically. If identification fails, refresh X and extension discovery, then press `r` to retry.
+5. Confirm the displayed account, press Enter to open followers, then `s` to scan. It collects following, then followers, then assesses candidates. Future launches open the follower list; `Shift+P` reopens pairing and pauses work.
 6. Review evidence with Enter; `K` keeps an account. `m` shows matching accounts, `a` selects matches, and `d` reviews a capped batch. Enter cancels; only `y` approves removal.
 
 Keep Chrome and the terminal open during work. Reconnects start the controller paused. If an X operation is unavailable, refresh the relevant X page, choose **Refresh X discovery**, then reconnect. Incompatible responses stop work or leave evidence unknown; they are not treated as proof of inactivity.
@@ -82,14 +82,15 @@ Unknown verification, relationships, visibility, or activity exclude an account.
 | `K` | Keep/unkeep focused account |
 | `f` | Edit policy |
 | `d`, then `y` | Review, then approve exact removal batch |
-| `p` | Pause/resume, available in every screen |
-| `c` | Cancel remaining batch, available in every screen |
+| `p` | Pause/resume in cleanup screens |
+| `c` | Cancel remaining batch in cleanup screens |
 | `r` | Reconcile an uncertain outcome without replaying removal |
+| `Shift+P` | Open the pairing guide and pause work |
 | `o` | Open profile in Chrome |
 | `?` / Esc | Help / close dialog |
 | `q` / Ctrl-C | Quit; Ctrl-C works in every screen |
 
-`p` and `c` remain reserved stop controls even inside search. Pausing cannot recall a request already dispatched. Keeping a target during its preflight stops further dispatch; an already sent removal may still complete.
+Setup stays paused; cleanup shortcuts are inactive there. `p` and `c` remain reserved stop controls in cleanup screens, even inside search. Pausing cannot recall a request already dispatched. Keeping a target during its preflight stops further dispatch; an already sent removal may still complete.
 
 ## How it works
 
