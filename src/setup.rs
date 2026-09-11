@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Result;
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout},
+    layout::{Alignment, Constraint, Layout},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
@@ -32,7 +32,11 @@ pub struct Setup {
 impl Setup {
     pub fn new(config: &Config) -> Self {
         Self {
-            step: Step::Install,
+            step: if config.extension_id.is_some() {
+                Step::Pair
+            } else {
+                Step::Install
+            },
             port: config.port,
             token: config.token.clone(),
             extension_dir: extension_dir(),
@@ -106,146 +110,148 @@ pub async fn copy(value: String) -> Result<()> {
     }
 }
 
-pub fn render(frame: &mut Frame, app: &App) {
-    let Some(setup) = &app.setup else {
-        return;
-    };
-    let area = frame.area();
-    let area = centered(area, area.width.saturating_sub(4).min(96), area.height);
-    let [header, body, footer] = Layout::vertical([
-        Constraint::Length(if area.height >= 24 { 6 } else { 4 }),
-        Constraint::Min(2),
-        Constraint::Length(4),
+pub fn render(frame: &mut Frame, app: &mut App) {
+    let Some(setup) = &mut app.setup else { return };
+    let connected = app.sender.is_some();
+    let ready = connected && !app.handle.is_empty();
+    let compact = frame.area().height < 22;
+    let area = centered(
+        frame.area(),
+        frame.area().width.saturating_sub(4).min(82),
+        23,
+    );
+    let [header, status, body, action, keys, notice] = Layout::vertical([
+        Constraint::Length(if compact { 1 } else { 3 }),
+        Constraint::Length(if compact { 1 } else { 4 }),
+        Constraint::Min(3),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(if compact { 2 } else { 3 }),
     ])
     .areas(area);
-    let accent = bold(MINT);
-    let muted = fg(MUTED);
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(Span::styled(" ◈ forgive-me  /  FIRST CONNECTION", accent)),
-            Line::styled(" Your terminal controls it. Chrome does the X work.", muted),
-            Line::from(Span::styled(
-                match setup.step {
-                    Step::Install => " [1 Install]  →  2 Pair  →  3 Connect",
-                    Step::Pair => " 1 Install  →  [2 Pair]  →  3 Connect",
-                    Step::Connect => " 1 Install  →  2 Pair  →  [3 Connect]",
-                    Step::Ready => " ✓ Chrome paired  ·  ✓ X account identified",
-                },
-                accent,
-            )),
-        ]),
+        Paragraph::new(Line::from(vec![
+            Span::styled("◈ forgive-me", bold(MINT)),
+            Span::styled(
+                format!("   SETUP  /  v{}", env!("CARGO_PKG_VERSION")),
+                fg(MUTED),
+            ),
+        ])),
         header,
     );
-    let (title, text, keys) = match setup.step {
-        Step::Install => (
-            " 1 / Set up Chrome ",
-            format!(
-                "Press b to start setup.
-
-The wizard opens Chrome and copies the extension folder path.
-Chrome requires you to confirm installation once.
-The extension then pairs with this terminal automatically.
-
-Extension folder:
-{}
-
-Already installed? Press Enter, then b to open its setup page.",
-                setup.extension_dir.display()
+    let chrome = if connected {
+        "✓ Chrome connected"
+    } else {
+        "○ Chrome not connected"
+    };
+    let account = if ready {
+        format!("✓ @{}", app.handle)
+    } else if connected {
+        "○ X account not identified".into()
+    } else {
+        "· X account waits for Chrome".into()
+    };
+    let states = if compact {
+        vec![Line::from(vec![
+            Span::styled("✓ Terminal   ", fg(MINT)),
+            Span::styled(
+                if connected {
+                    "✓ Chrome   "
+                } else {
+                    "○ Chrome   "
+                },
+                fg(if connected { MINT } else { AMBER }),
             ),
-            " b start setup   Enter already installed   q quit",
-        ),
-        Step::Pair if setup.manual => (
-            " Manual pairing ",
+            Span::styled(
+                if ready {
+                    "✓ X account"
+                } else {
+                    "○ X account"
+                },
+                fg(MUTED),
+            ),
+        ])]
+    } else {
+        vec![
+            Line::styled("✓ Terminal is ready", fg(MINT)),
+            Line::styled(chrome, fg(if connected { MINT } else { AMBER })),
+            Line::styled(account, fg(if ready { MINT } else { MUTED })),
+        ]
+    };
+    frame.render_widget(Paragraph::new(states), status);
+    let (title, text, primary, secondary) = if setup.manual {
+        (
+            " Manual connection ",
             format!(
-                "Open Manual connection and repair in the extension.
-Enter the port and pairing secret. Select Save & connect.
-
-Local port: {}
-
-Pairing secret: {}
-
-Press y to copy the secret. Press v to show or hide it.
-Keep the secret private.
-
-Press m to return to automatic pairing.",
+                "Open Manual connection and repair in the extension.\nPort: {}\nSecret: {}\n\nPaste the secret there, then Save & connect.",
                 setup.port,
                 if setup.revealed {
                     &setup.token
                 } else {
-                    "[hidden · y copies · v reveals]"
+                    "[hidden]"
                 }
             ),
-            " y copy secret   v show/hide   m automatic   ← back   q quit",
-        ),
-        Step::Pair => (
-            " 2 / Install and pair ",
+            "Enter  Copy secret",
+            "o open extension  v show/hide  Esc back  q quit",
+        )
+    } else if ready {
+        (
+            " Confirm your account ",
             format!(
-                "In Chrome's extension page:
-
-1. Enable Developer mode.
-2. Select Load unpacked.
-3. Press Cmd+Shift+G in the folder selector.
-4. Paste the copied folder path.
-5. Select the folder.
-
-{}
-
-Pairing starts automatically when the extension loads.
-If already installed, press b to open its setup page.
-No port or secret entry is needed.",
-                setup.extension_dir.display()
-            ),
-            " b open extension   y copy folder   m manual   Enter next   q quit",
-        ),
-        Step::Connect => (
-            " 3 / Connect your X account ",
-            format!(
-                "Press b to open X in Chrome.
-Sign in to the account you want to use.
-The extension rechecks the account after the page loads.
-
-Chrome: {}
-X account: {}
-
-Use the same Chrome profile for the extension and X.
-If identification fails, refresh X and press r.
-If Chrome is disconnected, press ←, then b to retry pairing.",
-                if app.sender.is_some() {
-                    "paired and connected"
-                } else {
-                    "waiting for the extension"
-                },
-                if app.pending.is_some() {
-                    "checking…"
-                } else {
-                    "not identified yet"
-                }
-            ),
-            " b open X   r retry account check   ← pairing   m manual   q quit",
-        ),
-        Step::Ready => (
-            " You're connected ",
-            format!(
-                "Connected as @{}\n\nCheck that this is the account you want to clean.\nIf it is wrong, switch accounts on X and press r to recheck.\n\nNext, press Enter to open your follower list.\nPress s there to scan your following and followers.\nReview the results before choosing anyone to remove.\n\nKeep Chrome and this terminal open during cleanup.\nYou can reopen this guide with Shift+P.",
+                "Connected as @{}\n\nIs this the account you want to clean?\nContinue to review your followers. Nothing runs yet.",
                 app.handle
             ),
-            " Enter open followers   r recheck account   q quit",
-        ),
+            "Enter  Use this account",
+            "r recheck account  q quit",
+        )
+    } else if connected {
+        if app.pending.is_some() {
+            (" Identifying your account ", "Chrome is paired. Checking the signed-in X account.\n\nThis screen advances when the account is identified.".into(),
+            "Checking X…", "b open X  q quit")
+        } else {
+            (" Sign in to X ", "Open X in this Chrome profile and sign in.\n\nThe extension checks again when the page loads.\nAlready signed in? Press r to check again.".into(),
+            "Enter  Open X", "r recheck account  m repair  q quit")
+        }
+    } else if setup.step == Step::Install {
+        (" Add the Chrome extension ", "Press Enter to open Chrome and copy the folder path.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n\nPairing starts when the extension loads.".into(),
+        "Enter  Set up Chrome", "o already installed  m manual  q quit")
+    } else {
+        (" Connect your extension ", "Open the extension and select Connect automatically.\nKeep this terminal running.\n\nNeed to install or update it? Press i to open Chrome's\nextension page, then Load unpacked or Reload.\n\nThis screen advances when Chrome connects.".into(),
+        "Enter  Open extension", "i install / reload  m manual  q quit")
     };
+    let block = theme::panel(title).border_style(fg(ICE));
+    let inner = block.inner(body);
+    let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    let max_scroll = paragraph
+        .line_count(inner.width)
+        .saturating_sub(usize::from(inner.height))
+        .min(u16::MAX as usize) as u16;
+    setup.scroll = setup.scroll.min(max_scroll);
+    frame.render_widget(paragraph.block(block).scroll((setup.scroll, 0)), body);
     frame.render_widget(
-        Paragraph::new(text)
-            .block(theme::panel(title).border_style(fg(ICE)))
-            .wrap(Wrap { trim: false })
-            .scroll((setup.scroll, 0)),
-        body,
+        Paragraph::new(primary)
+            .alignment(Alignment::Center)
+            .style(bold(BG).bg(if connected && app.pending.is_some() {
+                ICE
+            } else {
+                MINT
+            })),
+        action,
     );
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(Span::styled(app.notice.clone(), fg(AMBER))),
-            Line::styled(keys, fg(ICE)),
-            Line::from(Span::styled(" ↑ ↓ scroll instructions", muted)),
-        ])
-        .wrap(Wrap { trim: false }),
-        footer,
+        Paragraph::new(if max_scroll > 0 {
+            format!("{secondary}   ↑↓ scroll")
+        } else {
+            secondary.into()
+        })
+        .wrap(Wrap { trim: false })
+        .style(fg(MUTED)),
+        keys,
+    );
+    frame.render_widget(
+        Paragraph::new(app.notice.as_str())
+            .wrap(Wrap { trim: false })
+            .style(fg(AMBER)),
+        notice,
     );
 }

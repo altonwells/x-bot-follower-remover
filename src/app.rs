@@ -357,7 +357,13 @@ impl App {
                 self.pause().await?;
                 self.confirmation.clear();
                 let setup = self.setup.as_mut().unwrap();
-                setup.go(Step::Pair);
+                setup.go(if self.sender.is_none() {
+                    Step::Pair
+                } else if self.handle.is_empty() {
+                    Step::Connect
+                } else {
+                    Step::Ready
+                });
                 self.mode = Mode::Setup;
                 self.log("Pairing guide. Work is paused.");
             }
@@ -492,48 +498,66 @@ impl App {
                 setup.go(Step::Pair);
                 setup.manual = manual;
             }
-            KeyCode::Char('b') => match setup.step {
-                Step::Install => {
+            KeyCode::Char('i') if self.sender.is_none() => {
+                setup.go(Step::Install);
+                crate::setup::copy(setup.extension_dir.display().to_string()).await?;
+                crate::setup::open_chrome("chrome://extensions".into()).await?;
+                self.log("Folder copied. In Chrome, Load unpacked or Reload forgive-me. Waiting for connection.");
+            }
+            KeyCode::Char('o') if self.sender.is_none() || setup.manual => {
+                let id = crate::native::extension_id(&setup.extension_dir)?;
+                crate::setup::open_chrome(format!("chrome-extension://{id}/options.html")).await?;
+                if !setup.manual {
+                    setup.go(Step::Pair);
+                }
+                self.log("Extension opened. Follow the instructions above.");
+            }
+            KeyCode::Char('y') if self.sender.is_none() || setup.manual => {
+                let value = if setup.manual {
+                    setup.token.clone()
+                } else {
+                    setup.extension_dir.display().to_string()
+                };
+                crate::setup::copy(value).await?;
+                self.log("Copied. Paste in Chrome.");
+            }
+            KeyCode::Enter | KeyCode::Char('b') => {
+                if setup.manual {
+                    crate::setup::copy(setup.token.clone()).await?;
+                    self.log("Secret copied. Paste in Manual connection and repair.");
+                } else if self.sender.is_some()
+                    && !self.handle.is_empty()
+                    && key.code == KeyCode::Enter
+                {
+                    self.mode = Mode::Browse;
+                    self.log("Account confirmed. Press s to scan your followers.");
+                } else if self.sender.is_some() {
+                    if self.pending.is_none() || key.code == KeyCode::Char('b') {
+                        crate::setup::open_chrome("https://x.com/".into()).await?;
+                        self.log("Sign in to X. The extension checks again when the page loads.");
+                    }
+                } else if setup.step == Step::Install {
                     crate::setup::copy(setup.extension_dir.display().to_string()).await?;
                     crate::setup::open_chrome("chrome://extensions".into()).await?;
-                    setup.go(Step::Pair);
-                    self.log("Folder path copied. Load the extension in Chrome; pairing starts automatically.");
-                }
-                Step::Pair => {
+                    self.log("Folder copied. Load unpacked in Chrome. Waiting for the extension to connect.");
+                } else {
                     let id = crate::native::extension_id(&setup.extension_dir)?;
                     crate::setup::open_chrome(format!("chrome-extension://{id}/options.html"))
                         .await?;
-                    self.log("Chrome setup opened. Keep this terminal running.");
+                    self.log(
+                        "Select Connect automatically in the extension. Waiting for connection.",
+                    );
                 }
-                Step::Connect => crate::setup::open_chrome("https://x.com/".into()).await?,
-                Step::Ready => {}
-            },
-            KeyCode::Char('y') if matches!(setup.step, Step::Install | Step::Pair) => {
-                let (value, label) = if setup.step == Step::Install || !setup.manual {
-                    (
-                        setup.extension_dir.display().to_string(),
-                        "Extension folder",
-                    )
-                } else {
-                    (setup.token.clone(), "Pairing secret")
-                };
-                crate::setup::copy(value).await?;
-                self.log(format!("{label} copied. Paste it in Chrome."));
             }
-            KeyCode::Enter | KeyCode::Right => match setup.step {
-                Step::Install => setup.go(Step::Pair),
-                Step::Pair => setup.go(Step::Connect),
-                Step::Ready => {
-                    self.mode = Mode::Browse;
-                    self.log("Connected. Press s to scan, then review your followers.");
-                }
-                Step::Connect => {}
-            },
-            KeyCode::Esc | KeyCode::Left => match setup.step {
-                Step::Pair => setup.go(Step::Install),
-                Step::Connect => setup.go(Step::Pair),
-                _ => {}
-            },
+            KeyCode::Esc | KeyCode::Left => {
+                setup.go(if self.sender.is_none() {
+                    Step::Pair
+                } else if self.handle.is_empty() {
+                    Step::Connect
+                } else {
+                    Step::Ready
+                });
+            }
             KeyCode::Down | KeyCode::PageDown => {
                 setup.scroll = setup.scroll.saturating_add(1).min(40)
             }
@@ -676,7 +700,7 @@ impl App {
             }
             BridgeEvent::Disconnected(message) => {
                 if self.mode == Mode::Setup {
-                    self.setup.as_mut().unwrap().go(Step::Connect);
+                    self.setup.as_mut().unwrap().go(Step::Pair);
                 } else {
                     self.mode = Mode::Browse;
                 }

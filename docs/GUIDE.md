@@ -117,7 +117,7 @@ export PATH="$HOME/.local/bin:$PATH"
 To install a specific release:
 
 ```sh
-gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.4
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.5
 ```
 
 To install a local package from the repository folder:

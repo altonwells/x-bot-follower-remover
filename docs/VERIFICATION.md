@@ -98,3 +98,13 @@ The focused Rust baseline and final check each passed 27 tests. Simplify review 
 The installer suite passed (`Ran 7 tests`, `OK`), including ownership checks for native-host removal. The PTY test initially caught a test timing race: terminal EOF can precede the process becoming waitable. A bounded wait now checks exit without changing app behavior. The unchanged test also passed on retry. The corrected test passed (`Ran 1 test`, `OK`) and checks the same fullscreen, wheel, resize, and restoration behavior.
 
 The updated pairing screen was rendered and visually inspected with fictional fixture data. Live Chrome installation, native-host launch by Chrome itself, and live X compatibility remain unverified. No live account was scanned or modified.
+
+## Setup flow correction (v0.1.5)
+
+Replaced manually advanced setup pages with live connection checks. Enter runs the displayed action; it cannot skip pairing or identity checks. Disconnect returns to pairing. Reopening setup shows the current connection state. A saved handle without a live browser connection cannot claim readiness. Account confirmation remains explicit and does not start work.
+
+The centered setup panel uses a fixed primary action, live terminal/Chrome/account status, direct install/reload access, and concise instructions. At 52×12 the action and repair keys remain visible, the scroll hint appears when needed, and scroll offsets clamp on resize. The 120×34 and 52×12 previews were rendered and visually inspected.
+
+`cargo test --offline --locked` exited 0 (34 tests passed). `cargo clippy --offline --all-targets -- -D warnings`, `npm ci --offline`, and `npm run check` exited 0; `npm test` reported `tests 49`, `pass 49`, `fail 0`. Three new setup regressions cover navigation/state gating, waiting during identity checks and reopening setup, and scroll clamping across resize.
+
+Simplify review: reuse and efficiency found no worthwhile abstraction or performance change. Quality replaced misleading automatic-pairing text in the manual repair path with neutral guidance (net 0 lines). The compact scroll hint and scroll clamping were handled as separate usability fixes. The focused baseline passed 29 tests; the final focused suite passed 30, including the added scroll test. Clippy exited 0 before and after review. Live Chrome interaction and live X compatibility were not exercised; no account was scanned or modified.

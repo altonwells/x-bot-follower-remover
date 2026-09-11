@@ -73,7 +73,7 @@ async fn setup_waits_for_identity_and_never_resumes_work() {
     for c in ['p', 's', 'a', 'd', 'y'] {
         press(&mut app, KeyCode::Char(c)).await;
     }
-    press(&mut app, KeyCode::Enter).await;
+    press(&mut app, KeyCode::Right).await;
     app.tick().await.unwrap();
     assert!(app.paused && app.batch.is_none() && app.pending.is_none());
     assert!(rx.try_recv().is_err());
@@ -109,7 +109,7 @@ async fn setup_waits_for_identity_and_never_resumes_work() {
 #[tokio::test]
 async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
     let mut app = app();
-    press(&mut app, KeyCode::Enter).await;
+    press(&mut app, KeyCode::Char('m')).await;
     press(&mut app, KeyCode::Char('v')).await;
     let token = app.setup.as_ref().unwrap().token.clone();
     assert!(screen(&mut app, 94, 26).contains(&token));
@@ -133,9 +133,9 @@ async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
     app.bridge_event(BridgeEvent::Disconnected("Chrome closed".into()))
         .await
         .unwrap();
-    press(&mut app, KeyCode::Enter).await;
+    press(&mut app, KeyCode::Right).await;
     assert_eq!(app.mode, Mode::Setup);
-    assert!(app.setup.as_ref().unwrap().step == Step::Connect);
+    assert!(app.setup.as_ref().unwrap().step == Step::Pair);
     assert!(!screen(&mut app, 94, 26).contains("Connected as @example"));
 }
 
@@ -174,4 +174,73 @@ async fn instructions_render_at_supported_sizes_and_secret_is_opt_in() {
     press(&mut app, KeyCode::Char('P')).await;
     assert!(app.paused);
     assert_eq!(app.mode, Mode::Setup);
+}
+
+#[tokio::test]
+async fn navigation_cannot_skip_pairing_and_display_uses_live_connection() {
+    let mut app = app();
+    for _ in 0..4 {
+        press(&mut app, KeyCode::Right).await;
+    }
+    assert!(app.setup.as_ref().unwrap().step == Step::Install);
+    // Even stale saved UI state cannot claim a disconnected account is ready.
+    app.setup.as_mut().unwrap().go(Step::Ready);
+    app.handle = "stale_account".into();
+    let text = screen(&mut app, 94, 26);
+    assert!(text.contains("Chrome not connected"));
+    assert!(text.contains("Enter  Open extension"));
+    assert!(!text.contains("Connected as @stale_account"));
+    for (w, h) in [(52, 12), (94, 26), (140, 42)] {
+        let text = screen(&mut app, w, h);
+        assert!(text.contains("Enter  Open extension"));
+        assert!(text.contains("i install / reload"));
+    }
+}
+
+#[tokio::test]
+async fn enter_waits_during_identity_check_and_setup_reopens_at_live_state() {
+    let mut app = app();
+    let (tx, mut rx) = mpsc::channel(16);
+    app.bridge_event(BridgeEvent::Connected {
+        session_id: "browser".into(),
+        sender: tx,
+    })
+    .await
+    .unwrap();
+    let first = rx.recv().await.unwrap();
+    assert_eq!(first["work"]["command"]["kind"], "get_session");
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(app.mode, Mode::Setup);
+    assert!(rx.try_recv().is_err());
+    assert!(screen(&mut app, 94, 26).contains("Checking X"));
+    result(
+        &mut app,
+        WorkResult::Session {
+            owner_id: "1".into(),
+            handle: "example".into(),
+            capabilities: vec!["adapter:2".into()],
+        },
+    )
+    .await;
+    press(&mut app, KeyCode::Enter).await;
+    press(&mut app, KeyCode::Char('P')).await;
+    assert!(app.setup.as_ref().unwrap().step == Step::Ready);
+    assert!(screen(&mut app, 94, 26).contains("Enter  Use this account"));
+    assert!(app.paused && app.batch.is_none());
+}
+
+#[tokio::test]
+async fn wizard_scroll_clamps_and_recovers_after_resize() {
+    let mut app = app();
+    app.setup.as_mut().unwrap().go(Step::Pair);
+    app.setup.as_mut().unwrap().scroll = 40;
+    let text = screen(&mut app, 52, 12);
+    let end = app.setup.as_ref().unwrap().scroll;
+    assert!(end > 0 && end < 40);
+    assert!(text.contains("scroll"));
+    press(&mut app, KeyCode::Up).await;
+    screen(&mut app, 52, 12);
+    assert_eq!(app.setup.as_ref().unwrap().scroll, end - 1);
+    screen(&mut app, 140, 42);
+    assert_eq!(app.setup.as_ref().unwrap().scroll, 0);
 }

@@ -1,13 +1,12 @@
-forgive-me v0.1.4 adds automatic Chrome pairing and a guided setup flow.
+forgive-me v0.1.5 replaces the page-by-page pairing guide with setup driven by the live connection.
 
-- Press `b` in the terminal guide to open Chrome and copy the extension folder path.
-- Load the extension once. Chrome still requires this installation step.
-- The extension obtains the port and secret from a local native messaging helper. No manual secret entry is needed.
-- The extension shows the terminal connection and X account separately. The terminal still requires account confirmation before work.
-- Manual connection settings remain available for repair and survive reconnects.
-- Cancelled pairing attempts cannot replace a newer connection choice.
-- The installer preserves the extension path and stored data. Uninstall removes this installation's native host registration.
+- One primary Enter action opens the next required screen.
+- Terminal, Chrome, and X account status show what is ready and what is missing.
+- Setup advances only after Chrome connects and X identifies the account. Arrow keys cannot skip these checks.
+- Disconnect returns to pairing. Press i there to install or reload; no backward navigation is needed.
+- The layout is centered and compact, with a fixed action bar. Small terminals show a scroll hint and keep actions visible.
+- Manual repair stays available. Opening setup pauses work; confirming the account does not start a scan or removals.
 
-After updating, quit and reopen `forgive-me`. Reload the extension in `chrome://extensions` and accept the native messaging permission if Chrome asks. Open the extension and select **Connect automatically**.
+Quit and reopen forgive-me to use the new wizard. Press Shift+P if the follower list is already open. The Chrome pairing mechanism is unchanged from v0.1.4.
 
-Tests cover the native message exchange with the compiled executable, authenticated local connection, pairing races, setup screens, terminal behavior, and installation. Live Chrome installation and live X compatibility remain unverified. No real followers were removed.
+Verification uses synthetic connection events, rendered previews, an actual pseudo-terminal, native messaging integration, and installer tests. No live X account was scanned or modified.

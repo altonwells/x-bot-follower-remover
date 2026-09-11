@@ -127,7 +127,10 @@ fn main() {
     app.configure_setup(&Config::default());
     app.mode = Mode::Setup;
     app.setup.as_mut().unwrap().go(Step::Pair);
+    app.sender = None;
+    app.handle.clear();
     app.notice = "Pair with your Chrome extension to continue.".into();
     scenes.push(capture(&mut app, "pairing", 120, 34));
+    scenes.push(capture(&mut app, "pairing-minimum", 52, 12));
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }

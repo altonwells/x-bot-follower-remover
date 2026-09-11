@@ -73,7 +73,7 @@ forgive-me
 
 Keep the terminal open during these steps.
 
-1. Press `b` in the setup guide. The app opens Chrome and copies the extension folder path.
+1. Press Enter in the setup guide. The app opens Chrome and copies the extension folder path.
 2. Enable **Developer mode** on Chrome's extension page.
 3. Select **Load unpacked**.
 4. Press **Cmd+Shift+G** in the folder selector.
@@ -91,7 +91,9 @@ The extension folder is:
 ~/.local/share/forgive-me/bundle/forgive-me-extension
 ```
 
-If the extension is already installed, press Enter, then `b` to open its setup page.
+If the extension is already installed, press `o` to open its setup page.
+On the connection screen, Enter opens the extension and `i` opens install/reload.
+The guide advances only when Chrome connects and X identifies your account.
 Select **Connect automatically** if it does not connect.
 **Shift+P** opens the terminal guide again.
 Manual pairing remains available under **Manual connection and repair**.
@@ -189,7 +191,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.4 passed automated, terminal, and installer tests.
+Version 0.1.5 passed automated, terminal, and installer tests.
 The updated X integration still needs a new scan on a real account.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).
