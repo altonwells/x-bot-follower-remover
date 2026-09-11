@@ -1,152 +1,206 @@
 # forgive-me
 
-A small, local X follower cleaner. **Ratatui controls it. Chrome does the X work.**
+Control who follows you on X.
 
-Scan your followers, review accounts matching your cleanup policy, keep exceptions, and remove the selected followers. There is no hosted service, subscription, AI model, or external database.
+## Why
 
-**Status:** v0.1.3 adds a full visual redesign and fullscreen mouse/resize handling. The v0.1.2 X adapter changes remain in place; a fresh live follower scan is still needed to qualify endpoint compatibility. No live followers were removed during development.
+Bought followers and unwanted accounts can leave you with a follower list you did not choose.
+forgive-me helps you examine that list and remove unwanted followers.
+You set the rules. You approve each removal batch.
 
-![The follower dashboard, rendered with fictional preview data](docs/previews/dashboard.png)
+## How
 
-The terminal uses a dedicated alternate screen: fixed header and controls, an internally scrolling inventory, and mouse-wheel navigation. Wide windows show account evidence beside the list; smaller windows adapt down to 52×12. Help and detail panels scroll internally. `q` or Ctrl-C saves and restores your shell. Hold your terminal's selection modifier (often Shift or Option) to select text while mouse capture is active.
+The app separates the work into three steps:
 
-## Install from your terminal (Apple Silicon macOS)
+1. **Collect.** The Chrome extension reads your followers, the accounts you follow, and visible post activity.
+2. **Review.** The terminal shows which accounts meet your rules and the reason for each result.
+3. **Remove.** You approve a batch. The extension removes those followers, one account at a time.
 
-Requires the [GitHub CLI](https://cli.github.com/) authenticated to an account with access to this private repository. If needed, install it with `brew install gh`, then run `gh auth login` once.
+X login data stays in Chrome. The app stores account data and progress on your computer.
+If required data is unknown, the default rules exclude the account.
+The app does not repeat a removal automatically after an uncertain result.
+
+## What you can do
+
+- Find inactive followers and accounts with no current posts.
+- Exclude verified accounts and accounts you follow.
+- Keep specific accounts, even when they meet your removal rules.
+- Search the collected followers and examine account details.
+- Approve removal batches, pause work, or cancel the remaining removals.
+- See confirmed removals and results that need further examination.
+
+The app has a fullscreen terminal interface and a Chrome extension.
+It removes followers through X's `RemoveFollower` action.
+The accounts you follow do not change.
+
+![Follower list and account details. All accounts in this image are fictional.](docs/previews/dashboard.png)
+
+## Install
+
+Requirements:
+
+- An Apple Silicon Mac.
+- Chrome with access to your X account.
+- The [GitHub CLI](https://cli.github.com/), signed in to an account with access to this private repository.
+
+If you use Homebrew, install the GitHub CLI:
+
+```sh
+brew install gh
+```
+
+Sign in to GitHub:
+
+```sh
+gh auth login
+```
+
+Install forgive-me:
 
 ```sh
 gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh
 ```
 
-The installer downloads the latest private release, verifies its SHA-256 checksum, and installs without `sudo`, Rust, Node, or Python:
+The installer verifies the download checksum. It does not need `sudo`, Rust, Node, or Python.
 
-- Executable: `~/.local/bin/forgive-me`
-- Stable Chrome extension directory: `~/.local/share/forgive-me/bundle/forgive-me-extension`
-- App files and licenses: `~/.local/share/forgive-me/bundle/`
+Open a new terminal window. Start the app:
 
-It adds `~/.local/bin` to your zsh/bash startup file once. Open a new terminal afterward, or run `export PATH="$HOME/.local/bin:$PATH"` in the current one. It never copies or changes X credentials. Chrome's unpacked-extension installation remains a manual step.
+```sh
+forgive-me
+```
+
+### Connect Chrome
+
+Keep the terminal open during these steps.
+
+1. Open `chrome://extensions` in Chrome.
+2. Enable **Developer mode**.
+3. Select **Load unpacked**.
+4. Press **Cmd+Shift+G** in the folder selector.
+5. Enter the extension folder path shown below.
+6. Select the folder.
+7. Press Enter in the terminal to open the **Pair** screen.
+
+```text
+~/.local/share/forgive-me/bundle/forgive-me-extension
+```
+
+1. Open the forgive-me extension from Chrome's extension menu.
+2. Enter the port from the terminal's **Pair** screen.
+3. Press `y` in the terminal to copy the pairing secret.
+4. Paste the secret into the extension settings.
+5. Select **Save & connect**.
+6. Open `x.com` in the same Chrome profile.
+7. Sign in to the X account you want to use.
+8. Make sure the terminal shows the correct account.
+9. Press Enter to open the follower list.
+
+The terminal guides you through the connection steps. **Shift+P** opens the guide again.
+The pairing secret stays hidden unless you press `v`.
+
+## Remove unwanted followers
+
+Keep Chrome and the terminal open during work.
+
+1. Press `s` to start the scan.
+2. Wait for the scan to finish.
+3. Press `f` to examine the removal rules.
+4. Press Enter to save the rules.
+5. Press `m` to show accounts that meet the rules.
+6. Press Enter on an account to examine its data.
+7. Press Esc to return to the list.
+8. Press `K` on each account you want to keep.
+9. Press `a` to select the matches in the current view.
+10. Press `d` to review the removal batch.
+11. Press `y` only if you approve the removals.
+
+**Enter, `n`, or Esc cancels the removal confirmation.**
+
+### Default rules
+
+An account must meet all these conditions:
+
+- It follows you.
+- You do not follow it.
+- It is unverified, including blue verification.
+- It is public.
+- It is not on your keep list.
+- Recent data shows no visible post activity within 90 days, or shows zero current posts.
+
+Post activity includes posts, replies, and reposts. Inactivity does not prove that an account is a bot.
+Zero current posts does not mean the account never posted.
+
+The default batch limit is 50 accounts.
+After a removal finishes, the app waits at least 10 seconds before it sends the next removal request.
+Press `f` to change these settings.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| ↑ / ↓, `j` / `k`, mouse wheel | Move through the list or scroll help and details |
+| `s` | Start or continue a scan |
+| `/` | Search collected followers |
+| `m` | Switch between all followers and matches |
+| Enter | Open account details |
+| Space | Select or deselect one eligible account |
+| `a` | Select matches in the current view |
+| `K` | Add or remove a keep exception |
+| `f` | Change the removal rules |
+| `d` | Review a removal batch |
+| `p` | Pause or continue work |
+| `c` | Cancel the remaining removals |
+| `r` | Resolve one uncertain result without another removal request |
+| `o` | Open the account's X profile |
+| **Shift+P** | Open the connection guide and pause work |
+| `?` | Open help |
+| `q` | Quit from the follower list or connection guide |
+| **Ctrl-C** | Pause and quit from any screen |
+
+The terminal keeps the header and controls in place. Lists scroll inside the app.
+The minimum window size is 52 columns by 12 rows.
+
+To try the interface with fictional accounts:
 
 ```sh
 forgive-me --demo
 ```
 
-The demo uses six fictional accounts and an in-memory database. Try `a`, `d`, then Enter to cancel; `d`, then `y` runs fake removals. During a batch, a ladle pours water onto an X beside your handle, the current target, and **“Reseting followers”**—a counter of verified removals. The illustration pauses when work stops; small terminals get a compact version. Use `--no-animation` for a still illustration.
-
-To use your real account:
-
-1. Run `forgive-me`. First launch opens a guided setup screen.
-2. Follow **Install** to load the extension in Chrome. Press `y` to copy its folder path; use Cmd+Shift+G in Chrome's folder chooser to paste it. If already loaded, press Enter.
-3. In **Pair**, open the extension from Chrome's puzzle icon, enter the displayed port, press `y` to copy the secret, paste it into the extension, and click **Save & connect**. The secret stays hidden unless you press `v`.
-4. Keep X open and signed in. Setup detects Chrome and checks the account automatically. If identification fails, refresh X and extension discovery, then press `r` to retry.
-5. Confirm the displayed account, press Enter to open followers, then `s` to scan. It collects following, then followers, then assesses candidates. Future launches open the follower list; `Shift+P` reopens pairing and pauses work.
-6. Review evidence with Enter; `K` keeps an account. `m` shows matching accounts, `a` selects matches, and `d` reviews a capped batch. Enter cancels; only `y` approves removal.
-
-Keep Chrome and the terminal open during work. The header names the scan phase and labels incomplete inventories. Known mutuals found while collecting following are not a completed follower scan. Reconnects start the controller paused. If an X operation is unavailable, refresh the relevant X page, choose **Refresh X discovery**, then reconnect. Incompatible responses stop work or leave evidence unknown; they are not treated as proof of inactivity.
-
-## Update, select a version, or uninstall
-
-Quit the TUI, rerun the install command, then click **Reload** on the extension in `chrome://extensions` and **Save & connect** in its settings. When upgrading from before v0.1.2, refresh your signed-in X tab and press `s`: old adapter scans are rebuilt so missing counts and verification fields are recollected. Your keep list and action history are preserved. The TUI refuses work from an outdated browser adapter. The stable extension path preserves its unpacked identity. Your SQLite database and pairing settings stay in the separate application-data directory.
+The removal screen shows an animation and the confirmed removal count.
+To disable the animation:
 
 ```sh
-# Pin an available release instead of installing latest:
-gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.0
-
-# Uninstall binaries and extension files; keep cleanup data and pairing settings:
-sh ~/.local/share/forgive-me/bundle/install.sh --uninstall
+forgive-me --no-animation
 ```
 
-Remove the extension from Chrome manually after uninstall. The shared `~/.local/bin` PATH entry is retained because other tools may use it. Shell configuration can be left unchanged with `--no-modify-path`. Custom dedicated locations use `FORGIVE_ME_INSTALL_DIR` and `FORGIVE_ME_BIN_DIR`; add a custom binary directory to PATH yourself, and use the same overrides when uninstalling.
+## Update
 
-From a local checkout, `sh install.sh --from ./dist` installs the checksummed artifacts without GitHub access. The ZIP bundle can also be unpacked and its `forgive-me` executable launched directly. This release provides Apple Silicon macOS binaries; other platforms currently require building the source.
+1. Quit forgive-me.
+2. Run the install command again.
+3. Open `chrome://extensions`.
+4. Select **Reload** on forgive-me.
+5. Refresh your X tab.
+6. Start forgive-me in the terminal.
+7. Select **Save & connect** in the extension settings.
 
-## Default policy
+The update preserves your pairing settings, keep list, and action history.
 
-An account qualifies only when fresh evidence confirms **all** of these:
+## Limits and current status
 
-- It follows you.
-- You do not follow it.
-- It is unverified, including blue verification.
-- Its visible posting activity predates 90 days, or a fresh profile reports zero current posts.
-- It is public and is not on your keep list.
+X can change its web interface or restrict requests. The app can stop when this occurs.
+A pause cannot stop a removal request that the extension has already sent.
+There is no action to restore removed followers. A removed account can follow a public account again.
 
-Unknown verification, relationships, visibility, or activity exclude an account. Protected accounts are skipped. Zero posts does not mean the account never posted. Inactivity describes visible posting, including replies and repost actions, not whether someone reads X. These filters identify cleanup candidates, not proven bots.
+Version 0.1.3 passed automated, terminal, and installer tests.
+The updated X integration still needs a new scan on a real account.
+No real follower removal was used to test this release.
+See the [test record](docs/VERIFICATION.md).
 
-`f` adjusts the threshold, verified/following exclusions, zero-post inclusion, delay and batch cap. Defaults: 10 seconds between completed writes and subsequent dispatches, at most 50 targets per approval. No pace guarantees immunity from X restrictions.
+## Reference
 
-## Keys
+- [Troubleshooting, data, and installation options](docs/GUIDE.md)
+- [Build instructions and internal design](docs/DEVELOPMENT.md)
+- [Browser protocol](protocol/README.md)
+- [Release history](https://github.com/altonwells/forgive-me/releases)
 
-| Key | Action |
-|---|---|
-| Arrows / `j`, `k`, PgUp/PgDn | Navigate |
-| `s` | Start/resume scan |
-| `/` | Search loaded followers |
-| `m` | Toggle matching-only view |
-| Enter | Evidence details; saves filters; cancels removal confirmation |
-| Space / `a` | Toggle account / select currently visible matches |
-| `K` | Keep/unkeep focused account |
-| `f` | Edit policy |
-| `d`, then `y` | Review, then approve exact removal batch |
-| `p` | Pause/resume in cleanup screens |
-| `c` | Cancel remaining batch in cleanup screens |
-| `r` | Reconcile an uncertain outcome without replaying removal |
-| `Shift+P` | Open the pairing guide and pause work |
-| `o` | Open profile in Chrome |
-| `?` / Esc | Help / close dialog |
-| `q` / Ctrl-C | Quit; Ctrl-C works in every screen |
-
-Setup stays paused; cleanup shortcuts are inactive there. `p` and `c` remain reserved stop controls in cleanup screens, even inside search. Pausing cannot recall a request already dispatched. Keeping a target during its preflight stops further dispatch; an already sent removal may still complete.
-
-## How it works
-
-The single Rust executable hosts the TUI, controller, embedded SQLite and a WebSocket listener bound to `127.0.0.1`. The MV3 extension connects with a random pairing secret; the first authenticated connection pins its extension ID. A versioned, bounded protocol carries normalized account facts and named commands. X cookies and authorization headers stay in Chrome.
-
-The extension discovers current GraphQL operations from observed X requests and loaded X JavaScript, using the existing browser session. Static discovery supports both responsive-web/webpack and x-web/Vite assets, follows bounded relative imports, and reads Relay query definitions without executing downloaded scripts. It generates a fresh `x-client-transaction-id` for each request inside Chrome. A read that returns 404 can refresh its query/signing data and retry once; mutation requests are never automatically retried. It fetches graph pages and candidate activity, then rechecks identity and eligibility immediately before each native `RemoveFollower` request. Modern activity checks cover Posts, Replies and Reposts separately. A recent action protects the account immediately; missing or ambiguous channel evidence keeps inactivity unknown. Counts use current `relationship_counts`/`tweet_counts` fields with legacy compatibility. It never substitutes unfollowing or block/unblock. Removal shrinks your incoming follower list; public accounts can be followed again.
-
-There is one outstanding task. The controller saves every attempted removal before dispatch; the extension journals its own dispatch/result receipt. Results are acknowledged after database persistence. Lost responses become **uncertain** and require a read-only relationship reconciliation. Neither restart nor a lost acknowledgement blindly repeats a write. SQLite records and progress are partitioned by owner ID.
-
-Only independently verified removals increment the removed counter. `already_absent` is reported separately. Completed targets cannot be replayed because an older batch checkpoint survived a crash.
-
-## Data and diagnostics
-
-Default macOS data directory: `~/Library/Application Support/forgive-me/`. It contains `cleanup.sqlite`, private `config.json`, and a process lock. Database content is local, not encrypted. Back up the directory with the application closed.
-
-```sh
-forgive-me doctor
-forgive-me --port 47832 pair
-forgive-me --data-dir /path/to/private-folder
-forgive-me pair --reset
-```
-
-`doctor` prints local configuration, saved owner, pairing identity and unresolved count; it does not contact X or certify adapter compatibility. Stop the TUI before running pairing/doctor for the same data directory. Changing the extension install directory can change its unpacked ID; use `pair --reset` if needed. Pairing settings are private: do not share them or screenshots containing them.
-
-## Build and test
-
-Requires Rust 1.88+ and Node 22+ for development. Rust dependencies and npm dependencies are locked. Ratatui is pinned to 0.30.2.
-
-```sh
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-cd extension
-npm ci
-npm run check
-npm test
-cd ..
-./scripts/package.sh
-python3 tests/install_test.py
-python3 tests/terminal_test.py target/release/forgive-me
-```
-
-To render the UI's fictional fixtures without a browser (macOS):
-
-```sh
-cargo run --example preview > /tmp/forgive-me-preview.json
-swift scripts/render-preview.swift /tmp/forgive-me-preview.json /tmp/forgive-me-previews
-```
-
-The packaging script produces the native executable for the current machine, an unpacked extension and its ZIP. It does not install the extension or change your X account. See [verification](docs/VERIFICATION.md) for tested behavior and remaining live checks, and [protocol](protocol/README.md) for the browser boundary.
-
-## Limits
-
-X's undocumented web interfaces and automation restrictions can change. Rate limits, authentication failures, incomplete data and unknown outcomes pause work or exclude accounts. First use should be a small reviewed trial after read-only collection works. This build has no unfollow, hard-block, background scheduler, continuous monitoring, or multi-account management UI; following data is used to protect mutual relationships.
-
-MIT licensed. See [third-party references](THIRD_PARTY_NOTICES.md).
+[MIT license](LICENSE). [Third-party notices](THIRD_PARTY_NOTICES.md).
