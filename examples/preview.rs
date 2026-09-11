@@ -235,5 +235,41 @@ fn main() {
             ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
         }));
     }
+    for (name, phase, paused, wait, working) in [
+        ("fly-collecting", "followers", false, 0, None),
+        (
+            "fly-checking",
+            "inspect",
+            false,
+            0,
+            Some(("Checking activity".to_string(), "quiet_orbit".to_string())),
+        ),
+        (
+            "fly-removing",
+            "inspect",
+            false,
+            0,
+            Some(("Removing".to_string(), "quiet_orbit".to_string())),
+        ),
+        ("fly-paused", "inspect", true, 0, None),
+        ("fly-resting", "inspect", false, 42, None),
+    ] {
+        let mut state = state.clone();
+        state.phase = phase.into();
+        state.paused = paused;
+        state.wait_seconds = wait;
+        state.working = working;
+        state.state = if paused {
+            "Paused"
+        } else if wait > 0 {
+            "Cooling down"
+        } else {
+            "Full Auto"
+        }
+        .into();
+        scenes.push(capture_frame(name, 160, 46, |f| {
+            ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
+        }));
+    }
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }

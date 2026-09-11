@@ -93,6 +93,7 @@ pub struct Scene<'a> {
     pub handle: &'a str,
     pub removed: usize,
     pub active: bool,
+    pub motion: crate::insect::Motion,
     pub state: String,
     pub target_label: String,
     pub removing: Option<String>,
@@ -143,6 +144,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
         handle: &app.handle,
         removed: app.removed,
         active: animating(app),
+        motion: crate::insect::Motion::from_work(
+            animating(app),
+            app.pacing.remaining_seconds() > 0,
+            &app.scan.phase,
+            target.is_some_and(|(label, _)| label == "Removing"),
+        ),
         state,
         target_label,
         removing: if target.is_some_and(|(label, _)| label == "Removing") {
@@ -164,11 +171,55 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
 pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64) {
     let active = scene.active;
     let phase = if active { tick as usize } else { 0 };
-    let now = if active {
-        tick.saturating_mul(50)
-    } else {
-        scene.animation.clock_ms
-    };
+    if area.width >= 112 && area.height >= 16 {
+        frame.render_widget(
+            ratatui::widgets::Block::default().style(fg(TEXT).bg(PANEL)),
+            area,
+        );
+        let [left, right] = Layout::horizontal([
+            Constraint::Length((area.width / 3).clamp(43, 56)),
+            Constraint::Min(60),
+        ])
+        .spacing(1)
+        .areas(area);
+        let block = panel(" THE CLEANSE ");
+        let inner = block.inner(left);
+        frame.render_widget(block, left);
+        let art = centered(
+            Rect::new(
+                inner.x,
+                inner.y,
+                inner.width,
+                inner.height.saturating_sub(2),
+            ),
+            40,
+            25,
+        );
+        render_water(frame, scene, art, tick);
+        ink(
+            frame,
+            inner,
+            0,
+            inner.height.saturating_sub(2),
+            &format!("Reseting followers: {}", scene.removed),
+            bold(MINT),
+        );
+        ink(
+            frame,
+            inner,
+            0,
+            inner.height.saturating_sub(1),
+            &scene.state,
+            fg(MUTED),
+        );
+        let age = scene
+            .animation
+            .departures
+            .back()
+            .map(|d| scene.animation.clock_ms.saturating_sub(d.at_ms));
+        crate::insect::render(frame, right, scene.motion, scene.animation.clock_ms, age);
+        return;
+    }
     let block = panel(" THE CLEANSE ")
         .title_top(Line::styled(" , SYSTEM SETTINGS ", fg(ICE)).right_aligned());
     let inner = block.inner(area);
@@ -215,6 +266,55 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
     let [art, detail] = Layout::horizontal([Constraint::Length(art_width), Constraint::Min(24)])
         .spacing(4)
         .areas(stage);
+    render_water(frame, scene, art, tick);
+    let mut lines = vec![
+        Line::from(""),
+        Line::styled("FOLLOWER CLEANUP", fg(MUTED)),
+        Line::styled(owner, bold(ICE)),
+        Line::from(""),
+        Line::styled(counter, bold(MINT)),
+        Line::styled("Confirmed removals · account total", fg(MUTED)),
+        Line::from(""),
+        Line::styled(
+            format!(
+                "{} queued · {}s removal interval",
+                remaining, policy.delay_seconds
+            ),
+            fg(TEXT),
+        ),
+        Line::styled(target_label, fg(ICE)),
+        Line::from(""),
+        Line::styled(state, fg(if active { MINT } else { AMBER })),
+        Line::from(""),
+        Line::styled(
+            format!(
+                "{} attempts / batch · {}s rest",
+                policy.rest_every, policy.rest_seconds
+            ),
+            fg(ICE),
+        ),
+        Line::styled(
+            ", system settings · interval, batch size and rests",
+            fg(MUTED),
+        ),
+    ];
+    if let Some(last) = scene.animation.departures.back() {
+        lines.extend([
+            Line::from(""),
+            Line::styled(format!("✓ Removed @{}", last.handle), bold(MINT)),
+        ]);
+    }
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), detail);
+}
+
+fn render_water(frame: &mut Frame, scene: &Scene<'_>, art: Rect, tick: u64) {
+    let active = scene.active;
+    let phase = if active { tick as usize } else { 0 };
+    let now = if active {
+        tick.saturating_mul(50)
+    } else {
+        scene.animation.clock_ms
+    };
     let tall = art.height >= 24;
     let medium = art.height >= 17;
     // Keep the original v0.1.11 composition; shorten its vertical spacing at smaller sizes.
@@ -372,42 +472,4 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
     if let Some(handle) = &scene.removing {
         tag(frame, art, stream_start, handle, false);
     }
-    let mut lines = vec![
-        Line::from(""),
-        Line::styled("FOLLOWER CLEANUP", fg(MUTED)),
-        Line::styled(owner, bold(ICE)),
-        Line::from(""),
-        Line::styled(counter, bold(MINT)),
-        Line::styled("Confirmed removals · account total", fg(MUTED)),
-        Line::from(""),
-        Line::styled(
-            format!(
-                "{} queued · {}s removal interval",
-                remaining, policy.delay_seconds
-            ),
-            fg(TEXT),
-        ),
-        Line::styled(target_label, fg(ICE)),
-        Line::from(""),
-        Line::styled(state, fg(if active { MINT } else { AMBER })),
-        Line::from(""),
-        Line::styled(
-            format!(
-                "{} attempts / batch · {}s rest",
-                policy.rest_every, policy.rest_seconds
-            ),
-            fg(ICE),
-        ),
-        Line::styled(
-            ", system settings · interval, batch size and rests",
-            fg(MUTED),
-        ),
-    ];
-    if let Some(last) = scene.animation.departures.back() {
-        lines.extend([
-            Line::from(""),
-            Line::styled(format!("✓ Removed @{}", last.handle), bold(MINT)),
-        ]);
-    }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), detail);
 }

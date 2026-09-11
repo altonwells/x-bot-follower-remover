@@ -1,5 +1,7 @@
-# Remover 0.4.2
+# Remover 0.4.3
 
-Restores the full ladle, continuous water stream, X logo, and falling account tags at normal terminal sizes, including 120×30. The original v0.1.11 artwork now adapts its height instead of collapsing into a text line.
+The terminal now pairs the pouring X scene with an original dot-rendered fly brain and fruit fly. Collection, activity checks, removal, cooldowns, and pause produce distinct visual states. Confirmed removals trigger a brief brain pulse and wing movement.
 
-Water continues during cooldowns and stops on pause. Confirmed removals drive account tags. Queue behavior and follower rules are unchanged. The Chrome extension remains v0.4.1; no extension reload is needed for this terminal-only fix.
+The scene fits 120×30 terminals and larger windows; narrow windows keep the full ladle illustration. The artwork is a display-only visualization with no neural model, GPU dependency, or changes to cleanup rules and pacing. `--no-animation` keeps it still. `REMOVER_ASCII=1` replaces Braille artwork with ASCII dots.
+
+This release also includes the compact monochrome Chrome follower table and revised README screenshots. The Chrome background driver remains v0.4.1. Refresh the open manager page to load its new layout; no driver reload is required when updating from v0.4.2.

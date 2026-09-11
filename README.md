@@ -122,7 +122,7 @@ One approval starts a full pass. Remover collects followers, checks activity, an
 
 **Keep Chrome open, X signed in, and your Mac awake.** You can close the terminal. Run `remover` again to see progress. In **Settings**, enable **Keep Mac awake** for long runs; this prevents idle sleep but does not guarantee operation with the lid closed.
 
-![Remover terminal cleanup: a ladle pours water over the X logo while confirmed account tags fall through the stream](docs/previews/auto-worker-animation.png)
+![Remover terminal cleanup: pouring X animation beside a dot-rendered fly brain and walking fruit fly](docs/previews/auto-worker-animation.png)
 
 | Terminal key | Action |
 | --- | --- |
@@ -167,7 +167,9 @@ remover --advanced
 
 Use the full inventory, evidence panel, manual selection, and custom rules. Press **?** for controls. Before a background job starts, **Tab** switches simple and advanced views.
 
-During a job, **v** switches the list and animation. Water flows during cooldowns and stops when paused. Floating account tags appear after confirmed removals. Use `--no-animation` for a still view.
+During a job, **v** switches the list and animation. The ladle pours over X beside a dot-rendered brain and fruit fly. The fly walks during collection, senses during checks, and rests during cooldowns. A confirmed removal triggers a brain pulse, wing movement, and a falling account tag. Pause stops motion.
+
+The brain and fly are a visualization of queue activity, not a biological simulation or a bot classifier. The full scene fits terminals at least 112 columns wide with enough height; smaller windows retain the ladle view. Use `--no-animation` for a still view, or `REMOVER_ASCII=1 remover` if your terminal does not display Braille dots.
 
 Full Auto uses the fixed 30-day rule. Custom advanced rules apply to manual selection.
 

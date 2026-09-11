@@ -1317,6 +1317,15 @@ pub fn render_worker_with_animation(
             handle: &state.handle,
             removed: state.removed,
             active,
+            motion: crate::insect::Motion::from_work(
+                active,
+                state.wait_seconds > 0,
+                &state.phase,
+                state
+                    .working
+                    .as_ref()
+                    .is_some_and(|(action, _)| action == "Removing"),
+            ),
             state: if state.paused {
                 "Paused · water stopped".into()
             } else if state.wait_seconds > 0 {

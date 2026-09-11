@@ -349,6 +349,15 @@ fn pouring_scene_survives_real_terminal_sizes_and_tags_keep_moving() {
         };
         let mut animation = Animation::default();
         let first = draw(&animation);
+        if width >= 112 {
+            assert!(first.contains("BRAIN / VISUALIZATION"));
+            assert!(first.contains("FLY 01"));
+            assert!(
+                first
+                    .chars()
+                    .any(|c| ('\u{2801}'..='\u{28ff}').contains(&c))
+            );
+        }
         assert!(
             first.contains("━━━━━━━━"),
             "ladle missing at {width}x{height}"

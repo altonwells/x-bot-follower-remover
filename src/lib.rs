@@ -14,3 +14,5 @@ pub mod background;
 pub mod pacing;
 
 pub mod manager;
+
+pub mod insect;
