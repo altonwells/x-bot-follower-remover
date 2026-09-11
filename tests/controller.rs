@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use forgive_me::{
+use std::{collections::VecDeque, path::Path};
+use tokio::sync::mpsc;
+use x_bot_follower_remover::{
     app::{App, Batch, Mode},
     bridge::BridgeEvent,
     model::{Account, Policy, now_ms},
     protocol::{Command, Work},
     store::Store,
 };
-use std::{collections::VecDeque, path::Path};
-use tokio::sync::mpsc;
 fn fixture() -> App {
     let mut store = Store::open(Path::new(":memory:")).unwrap();
     store.set("last_owner", &"1").unwrap();
@@ -25,7 +25,7 @@ fn fixture() -> App {
         .unwrap();
     // Avoid deserializing an incomplete scan fixture.
     store
-        .set("scan:1", &forgive_me::app::Scan::default())
+        .set("scan:1", &x_bot_follower_remover::app::Scan::default())
         .unwrap();
     let mut app = App::new(store, false).unwrap();
     app.capabilities = vec![
@@ -194,7 +194,7 @@ async fn an_outdated_browser_cannot_resume_saved_work_or_start_a_scan() {
 
 #[tokio::test]
 async fn collection_stops_before_activity_and_i_explicitly_starts_checks() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     let mut app = fixture();
     app.scan.phase = "followers".into();
     let work = Work {
@@ -242,7 +242,7 @@ async fn approval_keeps_every_selected_target_instead_of_truncating_to_hourly_bu
 
 #[tokio::test]
 async fn deferred_removal_stays_queued_cooldown_survives_reload_and_is_not_unresolved() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     let mut app = fixture();
     app.batch = Some(Batch {
         id: "b".into(),
@@ -286,7 +286,7 @@ async fn deferred_removal_stays_queued_cooldown_survives_reload_and_is_not_unres
             assert!(s.finished_targets("b")?.is_empty());
             assert!(s.unresolved("1")?.is_empty());
             assert!(
-                s.get::<forgive_me::pacing::Pacing>("pacing:1")?
+                s.get::<x_bot_follower_remover::pacing::Pacing>("pacing:1")?
                     .unwrap()
                     .until_ms
                     >= until
@@ -299,13 +299,13 @@ async fn deferred_removal_stays_queued_cooldown_survives_reload_and_is_not_unres
 
 #[test]
 fn rolling_hourly_budget_and_server_cooldown_survive_serialization() {
-    let mut pace = forgive_me::pacing::Pacing::default();
+    let mut pace = x_bot_follower_remover::pacing::Pacing::default();
     assert!(pace.reserve(1));
     assert!(!pace.reserve(1));
     assert!(pace.remaining_seconds() >= 3599);
     let until = now_ms() + 7_200_000;
     pace.retry(Some(until), "rate_limited");
-    let restored: forgive_me::pacing::Pacing =
+    let restored: x_bot_follower_remover::pacing::Pacing =
         serde_json::from_str(&serde_json::to_string(&pace).unwrap()).unwrap();
     assert_eq!(restored.attempts.len(), 1);
     assert!(restored.until_ms >= until);
@@ -313,7 +313,7 @@ fn rolling_hourly_budget_and_server_cooldown_survive_serialization() {
 
 #[tokio::test]
 async fn activity_checks_follow_display_order_and_focus_the_active_account() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     let mut app = fixture();
     let zulu = app.accounts.get_mut("2").unwrap();
     zulu.handle = "zulu".into();
@@ -471,7 +471,7 @@ async fn sparse_policy_requires_browser_support_before_any_action_is_journaled()
 
 #[test]
 fn volume_statistics_handle_small_equal_and_skewed_cohorts() {
-    use forgive_me::model::post_volume;
+    use x_bot_follower_remover::model::post_volume;
     let mut cohort = vec![
         Account {
             follows_me: Some(true),
@@ -497,7 +497,7 @@ fn volume_statistics_handle_small_equal_and_skewed_cohorts() {
 
 #[test]
 fn batch_rest_is_durable_and_never_shortens_server_cooldowns() {
-    use forgive_me::pacing::Pacing;
+    use x_bot_follower_remover::pacing::Pacing;
     let policy = Policy {
         rest_every: 2,
         rest_seconds: 300,
@@ -570,7 +570,7 @@ async fn system_settings_update_real_queue_pacing_but_preserve_rules_and_waits()
 
 #[tokio::test]
 async fn full_auto_collects_checks_removes_only_cleared_accounts_and_finishes() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     async fn reply(app: &mut App, result: WorkResult, rx: &mut mpsc::Receiver<serde_json::Value>) {
         let id = app.pending.as_ref().unwrap().command_id.clone();
         app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
@@ -692,7 +692,7 @@ async fn full_auto_collects_checks_removes_only_cleared_accounts_and_finishes() 
 
 #[tokio::test]
 async fn cancelling_full_auto_ignores_a_late_activity_result_and_clears_saved_run() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     let mut app = fixture();
     app.auto_policy = Some(app.policy.clone());
     app.scan.phase = "inspect".into();
@@ -728,7 +728,7 @@ async fn cancelling_full_auto_ignores_a_late_activity_result_and_clears_saved_ru
 
 #[tokio::test]
 async fn final_collection_receipt_cannot_undo_a_full_auto_pause() {
-    use forgive_me::protocol::{ClientMessage, WorkResult};
+    use x_bot_follower_remover::protocol::{ClientMessage, WorkResult};
     let mut app = fixture();
     app.auto_policy = Some(app.policy.clone());
     app.scan.phase = "followers".into();

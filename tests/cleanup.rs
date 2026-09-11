@@ -1,12 +1,12 @@
-use forgive_me::{
+use std::{collections::VecDeque, path::Path, time::Instant};
+use tokio::sync::mpsc;
+use x_bot_follower_remover::{
     app::{App, Batch},
     bridge::BridgeEvent,
     model::{Account, Policy, now_ms},
     protocol::{ClientMessage, Command, WorkResult},
     store::Store,
 };
-use std::{collections::VecDeque, path::Path, time::Instant};
-use tokio::sync::mpsc;
 
 fn fixture() -> (App, mpsc::Receiver<serde_json::Value>) {
     let mut app = App::new(Store::open(Path::new(":memory:")).unwrap(), true).unwrap();
@@ -240,7 +240,7 @@ async fn successful_reinspection_does_not_reset_failed_removal_budget() {
     let (mut app, _rx) = fixture();
     app.retries.insert(
         "2".into(),
-        forgive_me::app::Retry {
+        x_bot_follower_remover::app::Retry {
             attempts: 3,
             due_ms: 0,
         },

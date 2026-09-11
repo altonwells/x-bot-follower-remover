@@ -42,11 +42,11 @@ test("native helper errors remain actionable without returning credentials", asy
     nativeSettings(
       async () => ({
         ok: false,
-        error: "Start forgive-me in your terminal first",
+        error: "Start remover in your terminal first",
       }),
       id,
     ),
-    /Start forgive-me/,
+    /Start remover/,
   );
   await assert.rejects(
     nativeSettings(async () => {

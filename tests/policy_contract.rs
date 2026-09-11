@@ -1,5 +1,5 @@
-use forgive_me::model::{Account, Policy};
 use serde_json::Value;
+use x_bot_follower_remover::model::{Account, Policy};
 #[test]
 fn policy_contract_matches_extension_fixtures() {
     let f: Value = serde_json::from_str(include_str!("../protocol/fixtures/policy.json")).unwrap();

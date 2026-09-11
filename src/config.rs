@@ -22,11 +22,10 @@ impl Default for Config {
     }
 }
 pub fn data_dir(custom: Option<PathBuf>) -> Result<PathBuf> {
-    let p = custom.unwrap_or(
-        dirs::data_local_dir()
-            .context("No local data directory")?
-            .join("forgive-me"),
-    );
+    let p = match custom {
+        Some(path) => path,
+        None => default_data_dir(&dirs::data_local_dir().context("No local data directory")?),
+    };
     fs::create_dir_all(&p)?;
     #[cfg(unix)]
     {
@@ -64,4 +63,14 @@ pub fn save(dir: &Path, c: &Config) -> Result<()> {
     f.sync_all()?;
     fs::rename(path, dir.join("config.json"))?;
     Ok(())
+}
+
+/// Reuse the existing database and process lock when upgrading an earlier install.
+pub fn default_data_dir(base: &Path) -> PathBuf {
+    let legacy = base.join("forgive-me");
+    if legacy.is_dir() {
+        legacy
+    } else {
+        base.join("remover")
+    }
 }

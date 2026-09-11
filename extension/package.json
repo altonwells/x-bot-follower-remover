@@ -1,6 +1,6 @@
 {
-  "name": "forgive-me-extension",
-  "version": "0.2.0",
+  "name": "x-bot-follower-remover-extension",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,5 +15,15 @@
     "linkedom": "^0.18.13",
     "prettier": "3.9.6",
     "typescript": "^5.9.0"
+  },
+  "description": "The Chrome companion for remover. Connect your terminal to X.",
+  "homepage": "https://github.com/altonwells/x-bot-follower-remover",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/altonwells/x-bot-follower-remover.git",
+    "directory": "extension"
+  },
+  "bugs": {
+    "url": "https://github.com/altonwells/x-bot-follower-remover/issues"
   }
 }

@@ -3,92 +3,160 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>forgive-me · Connect Chrome</title>
+    <meta name="color-scheme" content="light" />
+    <title>Remover · Connect Chrome</title>
+    <link rel="icon" href="icons/r-32.png" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main>
-      <p class="eyebrow">CHROME SETUP</p>
-      <h1>forgive-me<span>.</span></h1>
-      <p class="intro">Connect once. Review removals in your terminal.</p>
-      <section>
-        <h2>1. Connect the terminal</h2>
-        <p>Run <code>forgive-me</code> in your terminal. Keep it open.</p>
-        <p>
-          The extension obtains the connection settings from the local app. You
-          do not need to copy a secret.
+      <header class="masthead">
+        <a class="brand" href="#" aria-label="Remover home"
+          ><img
+            src="icons/r-48.png"
+            width="36"
+            height="36"
+            alt=""
+          />remover<span class="brand-dot">.</span></a
+        >
+        <span class="local-label"
+          ><span class="dot"></span> YOUR COMPUTER. YOUR CONTROL.</span
+        >
+      </header>
+      <div class="intro">
+        <p class="eyebrow">A FRESH START</p>
+        <h1>Less noise.<br /><span>More you.</span></h1>
+        <p class="lede">
+          Connect your terminal to X.<br />A cleaner follower list starts here.
         </p>
-        <div class="buttons">
-          <button id="auto-pair" type="button">Connect automatically</button>
-          <button id="disconnect" type="button" class="secondary">
-            Disconnect
+      </div>
+      <div class="connection-card">
+        <div class="card-heading">
+          <h2>Your connection</h2>
+          <span id="connection-label" class="badge">Checking</span>
+        </div>
+        <section
+          id="terminal-step"
+          class="step"
+          aria-labelledby="terminal-heading"
+        >
+          <span class="step-number" aria-hidden="true">01</span>
+          <div class="step-body">
+            <h3 id="terminal-heading">Start your terminal</h3>
+            <p>Run this command and keep the app open to pair.</p>
+            <div class="command">
+              <span aria-hidden="true">$</span><code>remover</code>
+            </div>
+            <div class="buttons">
+              <button id="auto-pair" type="button">
+                Connect terminal <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+            <p id="status" class="status" role="status" aria-live="polite">
+              Checking connection…
+            </p>
+          </div>
+        </section>
+        <section
+          id="account-step"
+          class="step"
+          aria-labelledby="account-heading"
+        >
+          <span class="step-number" aria-hidden="true">02</span>
+          <div class="step-body">
+            <h3 id="account-heading">Connect your X account</h3>
+            <p>Open X in this Chrome profile and sign in.</p>
+            <button id="open-x" type="button" class="secondary">
+              Open X <span aria-hidden="true">↗</span>
+            </button>
+            <p id="account" class="status" role="status" aria-live="polite">
+              Waiting for your account.
+            </p>
+          </div>
+        </section>
+        <section
+          id="ready-step"
+          class="step last"
+          aria-labelledby="ready-heading"
+        >
+          <span class="step-number" aria-hidden="true">03</span>
+          <div class="step-body">
+            <h3 id="ready-heading">Make it yours</h3>
+            <p id="ready-copy">
+              Confirm your account in the terminal. Then review the cleanup rule
+              and start when you’re ready.
+            </p>
+          </div>
+        </section>
+        <div class="card-foot">
+          <span aria-hidden="true">◇</span> Pairing alone does not start a
+          cleanup.
+        </div>
+      </div>
+      <aside class="privacy">
+        <span class="privacy-mark" aria-hidden="true">⌘</span>
+        <p>
+          <strong>A direct connection.</strong> Login stays in Chrome. Progress
+          stays on your computer. You control the queue from your terminal.
+        </p>
+      </aside>
+      <details>
+        <summary>Connection help <span aria-hidden="true">+</span></summary>
+        <div class="repair">
+          <p>
+            Start <code>remover</code>, then select
+            <strong>Connect terminal</strong>. If you moved the extension to a
+            new folder, stop the old worker and run
+            <code>remover pair --reset</code> with the app closed. Then reopen
+            it.
+          </p>
+          <p>
+            For manual pairing, run <code>remover pair</code> with the app
+            closed. Copy the secret, start <code>remover</code>, then enter the
+            settings below.
+          </p>
+          <form id="pair">
+            <label for="port">Local port</label
+            ><input
+              id="port"
+              name="port"
+              type="number"
+              value="47831"
+              min="1024"
+              max="65535"
+              required
+            />
+            <label for="token">Pairing secret</label
+            ><input
+              id="token"
+              name="token"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              minlength="64"
+              maxlength="64"
+              required
+              placeholder="Paste the secret from your terminal"
+            />
+            <div class="buttons">
+              <button type="submit" class="secondary">Save & connect</button
+              ><button id="disconnect" type="button" class="quiet">
+                Disconnect
+              </button>
+            </div>
+          </form>
+          <p>
+            If X cannot be read, refresh your signed-in X tab, then refresh
+            discovery.
+          </p>
+          <button id="discover" type="button" class="secondary">
+            Refresh X discovery
           </button>
         </div>
-        <p id="status" role="status" aria-live="polite">Checking connection…</p>
-      </section>
-      <section>
-        <h2>2. Sign in to X</h2>
-        <p>Use this Chrome profile for your X account.</p>
-        <button id="open-x" type="button" class="secondary">Open X</button>
-        <p id="account" role="status" aria-live="polite">
-          Waiting for your account.
-        </p>
-      </section>
-      <section>
-        <h2>3. Confirm your account</h2>
-        <p>Return to the terminal. Make sure it shows the correct account.</p>
-        <p>
-          Press Enter to open your followers. Press <code>s</code> to start the
-          scan.
-        </p>
-        <p>Connection does not approve any removals.</p>
-      </section>
-      <details>
-        <summary>Manual connection and repair</summary>
-        <p>
-          If automatic pairing fails, restart the updated terminal app. Then
-          retry the connection.
-        </p>
-        <p>
-          For manual pairing, press <code>Shift+P</code> in the terminal, then
-          <code>m</code>.
-        </p>
-        <form id="pair">
-          <label for="port">Local port</label>
-          <input
-            id="port"
-            name="port"
-            type="number"
-            value="47831"
-            min="1024"
-            max="65535"
-            required
-          />
-          <label for="token">Pairing secret</label>
-          <input
-            id="token"
-            name="token"
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
-            minlength="64"
-            maxlength="64"
-            required
-            placeholder="Paste the secret from your terminal"
-          />
-          <div class="buttons">
-            <button type="submit" class="secondary">Save & connect</button>
-          </div>
-        </form>
-        <p>
-          If the terminal reports a missing X operation, refresh the X tab. Then
-          refresh discovery.
-        </p>
-        <button id="discover" type="button" class="secondary">
-          Refresh X discovery
-        </button>
       </details>
-      <footer id="version"></footer>
+      <footer>
+        <span>Less clutter. On your terms.</span><span id="version"></span>
+      </footer>
     </main>
     <script type="module" src="options.js"></script>
   </body>

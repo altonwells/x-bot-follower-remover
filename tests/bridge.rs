@@ -1,7 +1,3 @@
-use forgive_me::{
-    bridge::{self, BridgeEvent},
-    config::Config,
-};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::{
@@ -12,6 +8,10 @@ use tokio::{
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{Message, client::IntoClientRequest},
+};
+use x_bot_follower_remover::{
+    bridge::{self, BridgeEvent},
+    config::Config,
 };
 #[tokio::test]
 async fn pairs_pins_origin_and_roundtrips_commands() {
@@ -53,7 +53,7 @@ async fn pairs_pins_origin_and_roundtrips_commands() {
         }
     }
     assert_eq!(
-        forgive_me::config::load(dir.path())
+        x_bot_follower_remover::config::load(dir.path())
             .unwrap()
             .extension_id
             .as_deref(),
@@ -71,7 +71,7 @@ async fn pairs_pins_origin_and_roundtrips_commands() {
             .await
             .unwrap()
             .unwrap(),
-        BridgeEvent::Message(forgive_me::protocol::ClientMessage::XPageReady { .. })
+        BridgeEvent::Message(x_bot_follower_remover::protocol::ClientMessage::XPageReady { .. })
     ));
     ws.send(Message::Text(
         json!({"type":"heartbeat","session_id":"stale"})

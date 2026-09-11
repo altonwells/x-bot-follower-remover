@@ -2,13 +2,13 @@
 # Private-release installer. No sudo, build tools, or X credentials required.
 set -eu
 
-fail() { printf 'forgive-me: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'remover: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "Required command missing: $1"; }
 
 main() {
-    repo=altonwells/forgive-me
-    install_dir=${FORGIVE_ME_INSTALL_DIR:-"$HOME/.local/share/forgive-me"}
-    bin_dir=${FORGIVE_ME_BIN_DIR:-"$HOME/.local/bin"}
+    repo=altonwells/x-bot-follower-remover
+    install_dir=${X_BOT_FOLLOWER_REMOVER_INSTALL_DIR:-${FORGIVE_ME_INSTALL_DIR:-"$HOME/.local/share/remover"}}
+    bin_dir=${X_BOT_FOLLOWER_REMOVER_BIN_DIR:-${FORGIVE_ME_BIN_DIR:-"$HOME/.local/bin"}}
     from_dir= version= uninstall=0 modify_path=1
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -16,15 +16,15 @@ main() {
             --version) [ "$#" -ge 2 ] || fail '--version needs a tag'; version=$2; shift 2 ;;
             --no-modify-path) modify_path=0; shift ;;
             --uninstall) uninstall=1; shift ;;
-            --help) printf '%s\n' 'Usage: sh install.sh [--version v0.1.0] [--from ./dist] [--no-modify-path] [--uninstall]' 'Overrides: FORGIVE_ME_INSTALL_DIR, FORGIVE_ME_BIN_DIR'; return ;;
+            --help) printf '%s\n' 'Usage: sh install.sh [--version v0.1.0] [--from ./dist] [--no-modify-path] [--uninstall]' 'Overrides: X_BOT_FOLLOWER_REMOVER_INSTALL_DIR, X_BOT_FOLLOWER_REMOVER_BIN_DIR'; return ;;
             *) fail "Unknown option: $1" ;;
         esac
     done
     case "$install_dir" in /*) ;; *) fail 'Install directory must be absolute' ;; esac
     case "$bin_dir" in /*) ;; *) fail 'Binary directory must be absolute' ;; esac
     [ "$install_dir" != / ] && [ "$install_dir" != "$HOME" ] || fail 'Choose a dedicated installation directory'
-    target=$install_dir/bundle/forgive-me
-    marker=$install_dir/.forgive-me-install
+    target=$install_dir/bundle/remover
+    marker=$install_dir/.remover-install
     path_file=
     case "${SHELL:-}" in
         */zsh) path_file=${ZDOTDIR:-"$HOME"}/.zshrc ;;
@@ -39,27 +39,27 @@ main() {
         [ -f "$marker" ] || fail "No managed installation at $install_dir"
         mkdir "$install_dir/.install-lock" 2>/dev/null || fail 'Another installer is running'
         trap 'rmdir "$install_dir/.install-lock" 2>/dev/null || :' EXIT
-        if [ -L "$bin_dir/forgive-me" ] && [ "$(readlink "$bin_dir/forgive-me")" = "$target" ]; then
-            rm "$bin_dir/forgive-me"
+        if [ -L "$bin_dir/remover" ] && [ "$(readlink "$bin_dir/remover")" = "$target" ]; then
+            rm "$bin_dir/remover"
         fi
         if [ -x "$target" ]; then "$target" unregister-host >/dev/null 2>&1 || :; fi
         rm -rf "$install_dir"
-        printf '%s\n' 'Uninstalled forgive-me. Your cleanup database and Chrome extension settings were preserved.' 'The shared ~/.local/bin PATH entry is retained. Remove the extension from chrome://extensions if desired.'
+        printf '%s\n' 'Uninstalled remover. Your cleanup database and Chrome extension settings were preserved.' 'The shared ~/.local/bin PATH entry is retained. Remove the extension from chrome://extensions if desired.'
         return
     fi
     case "$(uname -s)/$(uname -m)" in
-        Darwin/arm64) asset=forgive-me-macos-arm64.zip ;;
+        Darwin/arm64) asset=remover-macos-arm64.zip ;;
         *) fail 'This release provides an Apple Silicon macOS binary. Other platforms must build from source; no incompatible binary was installed.' ;;
     esac
     need unzip
     if command -v shasum >/dev/null 2>&1; then hash_tool=shasum; else need sha256sum; hash_tool=sha256sum; fi
-    if [ -e "$install_dir" ] && [ ! -f "$marker" ]; then
+    if [ -e "$install_dir" ] && [ ! -f "$marker" ] && [ ! -f "$install_dir/.forgive-me-install" ]; then
         fail "Refusing to replace an unmanaged directory: $install_dir"
     fi
-    if [ -e "$bin_dir/forgive-me" ] || [ -L "$bin_dir/forgive-me" ]; then
-        [ -L "$bin_dir/forgive-me" ] && [ "$(readlink "$bin_dir/forgive-me")" = "$target" ] || fail "An unmanaged executable already exists at $bin_dir/forgive-me"
+    if [ -e "$bin_dir/remover" ] || [ -L "$bin_dir/remover" ]; then
+        [ -L "$bin_dir/remover" ] && [ "$(readlink "$bin_dir/remover")" = "$target" ] || fail "An unmanaged executable already exists at $bin_dir/remover"
     fi
-    download_dir=$(mktemp -d "${TMPDIR:-/tmp}/forgive-me-download.XXXXXX")
+    download_dir=$(mktemp -d "${TMPDIR:-/tmp}/remover-download.XXXXXX")
     stage_dir= link_tmp= locked=0
     cleanup() {
         if [ "$locked" -eq 1 ]; then
@@ -92,16 +92,16 @@ main() {
     else actual=$(sha256sum "$download_dir/$asset" | awk '{print $1}'); fi
     [ "$actual" = "$expected" ] || fail 'Checksum mismatch; existing installation was not changed'
     unzip -Z -1 "$download_dir/$asset" > "$download_dir/entries"
-    awk 'index($0,"forgive-me/") != 1 || /(^|\/)\.\.(\/|$)/ || /\\/ {bad=1} END {exit bad}' "$download_dir/entries" || fail 'Unsafe archive paths'
+    awk 'index($0,"remover/") != 1 || /(^|\/)\.\.(\/|$)/ || /\\/ {bad=1} END {exit bad}' "$download_dir/entries" || fail 'Unsafe archive paths'
     unzip -Z -l "$download_dir/$asset" > "$download_dir/details"
     if grep '^l' "$download_dir/details" >/dev/null; then fail 'Archive contains unexpected symbolic links'; fi
     unzip -q "$download_dir/$asset" -d "$download_dir/unpacked"
-    payload=$download_dir/unpacked/forgive-me
-    [ -f "$payload/forgive-me" ] && [ -f "$payload/forgive-me-extension/manifest.json" ] && [ -f "$payload/install.sh" ] || fail 'Incomplete release bundle'
-    chmod 755 "$payload/forgive-me"
-    installed_version=$("$payload/forgive-me" --version)
-    case "$installed_version" in 'forgive-me '*) ;; *) fail 'Release executable failed validation' ;; esac
-    if [ -n "$version" ]; then [ "$installed_version" = "forgive-me ${version#v}" ] || fail 'Release tag and executable version disagree'; fi
+    payload=$download_dir/unpacked/remover
+    [ -f "$payload/remover" ] && [ -f "$payload/remover-extension/manifest.json" ] && [ -f "$payload/install.sh" ] || fail 'Incomplete release bundle'
+    chmod 755 "$payload/remover"
+    installed_version=$("$payload/remover" --version)
+    case "$installed_version" in 'remover '*) ;; *) fail 'Release executable failed validation' ;; esac
+    if [ -n "$version" ]; then [ "$installed_version" = "remover ${version#v}" ] || fail 'Release tag and executable version disagree'; fi
     mkdir -p "$install_dir" "$bin_dir"
     chmod 700 "$install_dir"
     : > "$marker"
@@ -114,28 +114,35 @@ main() {
     rm -rf "$install_dir/.previous"
     if [ -d "$install_dir/bundle" ]; then mv "$install_dir/bundle" "$install_dir/.previous"; fi
     mv "$stage_dir/bundle" "$install_dir/bundle"
-    link_tmp=$bin_dir/.forgive-me-link.$$
+    link_tmp=$bin_dir/.remover-link.$$
     ln -s "$target" "$link_tmp"
-    mv -f "$link_tmp" "$bin_dir/forgive-me"
+    mv -f "$link_tmp" "$bin_dir/remover"
     link_tmp=
+    # Retire only a legacy command owned by this exact installation.
+    if [ -f "$install_dir/.forgive-me-install" ]; then
+        if [ -L "$bin_dir/forgive-me" ] && [ "$(readlink "$bin_dir/forgive-me")" = "$install_dir/bundle/forgive-me" ]; then
+            rm "$bin_dir/forgive-me"
+        fi
+        rm "$install_dir/.forgive-me-install"
+    fi
     rm -rf "$install_dir/.previous"
     if [ "$modify_path" -eq 1 ] && [ "$bin_dir" = "$HOME/.local/bin" ] && [ -n "$path_file" ]; then
         mkdir -p "$(dirname "$path_file")"
-        if ! grep -F '# >>> forgive-me PATH >>>' "$path_file" >/dev/null 2>&1; then
+        if ! grep -E '# >>> (remover|forgive-me) PATH >>>' "$path_file" >/dev/null 2>&1; then
             cat >> "$path_file" <<'PATH_BLOCK'
 
-# >>> forgive-me PATH >>>
+# >>> remover PATH >>>
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
     *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
-# <<< forgive-me PATH <<<
+# <<< remover PATH <<<
 PATH_BLOCK
         fi
     fi
-    printf '\nInstalled %s\nCommand: %s/forgive-me\nChrome extension: %s/bundle/forgive-me-extension\n\n' "$installed_version" "$bin_dir" "$install_dir"
+    printf '\nInstalled %s\nCommand: %s/remover\nChrome extension: %s/bundle/remover-extension\n\n' "$installed_version" "$bin_dir" "$install_dir"
     case ":$PATH:" in *":$bin_dir:"*) ;; *) printf '%s\n' 'Open a new terminal, or add the binary directory to PATH in this terminal.' ;; esac
-    printf '%s\n' 'Next: run forgive-me, then press Enter to start Chrome setup. Use forgive-me --demo to preview.' 'Chrome requires Load unpacked once. Pairing then runs automatically.' 'For updates, reopen the TUI, Reload the extension, then select Connect automatically.'
+    printf '%s\n' 'Next: run remover, then press Enter to start Chrome setup. Use remover --demo to preview.' 'Chrome requires Load unpacked once. Pairing then runs automatically.' 'For updates, reopen the TUI, Reload the extension, then select Connect terminal.'
 }
 
 main "$@"

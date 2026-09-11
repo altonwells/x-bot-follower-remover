@@ -1,5 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use forgive_me::{
+use ratatui::{Terminal, backend::TestBackend};
+use std::path::Path;
+use tokio::sync::mpsc;
+use x_bot_follower_remover::{
     app::{App, Mode},
     bridge::BridgeEvent,
     config::Config,
@@ -8,9 +11,6 @@ use forgive_me::{
     store::Store,
     ui,
 };
-use ratatui::{Terminal, backend::TestBackend};
-use std::path::Path;
-use tokio::sync::mpsc;
 
 fn app() -> App {
     let mut app = App::new(Store::open(Path::new(":memory:")).unwrap(), false).unwrap();
@@ -323,7 +323,7 @@ async fn page_readiness_never_retries_success_or_rate_limits_or_starts_cleanup()
                 WorkResult::Error {
                     code: "rate_limited".into(),
                     message: "Wait".into(),
-                    retry_at_ms: Some(forgive_me::model::now_ms() + 60_000),
+                    retry_at_ms: Some(x_bot_follower_remover::model::now_ms() + 60_000),
                 }
             } else {
                 WorkResult::Session {
@@ -360,7 +360,7 @@ async fn reconnect_preserves_identity_rate_limit_without_another_request() {
         WorkResult::Error {
             code: "rate_limited".into(),
             message: "Wait".into(),
-            retry_at_ms: Some(forgive_me::model::now_ms() + 60_000),
+            retry_at_ms: Some(x_bot_follower_remover::model::now_ms() + 60_000),
         },
     )
     .await;

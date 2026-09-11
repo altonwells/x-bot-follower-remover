@@ -9,27 +9,53 @@ const stored = await chrome.storage.local.get(["port", "token", "pairingMode"]);
 port.value = String(stored.port ?? 47831);
 token.value = typeof stored.token === "string" ? stored.token : "";
 document.querySelector("#version")!.textContent =
-  `forgive-me ${chrome.runtime.getManifest().version} · Account data stays on your computer.`;
+  `Remover ${chrome.runtime.getManifest().version} · Chrome companion`;
 function showAccount(handle: unknown) {
-  account.textContent =
-    typeof handle === "string" && handle
-      ? `Connected as @${handle}. Confirm this account in your terminal.`
-      : "Sign in to X. The terminal will identify your account after the page loads.";
+  const identified =
+    document.body.dataset.connected === "true" &&
+    typeof handle === "string" &&
+    !!handle;
+  document.querySelector<HTMLElement>("#account-step")!.dataset.complete =
+    String(identified);
+  document.querySelector<HTMLElement>("#ready-step")!.dataset.complete =
+    String(identified);
+  account.textContent = identified
+    ? `Connected as @${handle}. Confirm this account in your terminal.`
+    : "Open X and sign in. Your account will appear here when the terminal identifies it.";
+  if (document.body.dataset.connected === "true")
+    document.querySelector("#connection-label")!.textContent = identified
+      ? "Ready"
+      : "Terminal connected";
+}
+function showStatus(message: string) {
+  const connected = message === "Connected";
+  document.body.dataset.connected = String(connected);
+  document.querySelector<HTMLElement>("#terminal-step")!.dataset.complete =
+    String(connected);
+  document.querySelector("#connection-label")!.textContent = connected
+    ? "Terminal connected"
+    : "Not connected";
+  status.textContent = connected ? "Your terminal is connected." : message;
+  autoPair.textContent = connected
+    ? "Reconnect terminal ↗"
+    : "Connect terminal ↗";
+  if (!connected) showAccount(null);
 }
 async function show() {
   const state = await chrome.runtime.sendMessage({ type: "status" });
-  status.textContent = state?.status ?? "Not connected";
+  showStatus(state?.status ?? "Not connected");
   showAccount(state?.accountHandle);
   return state?.status;
 }
 async function connect(type: "auto_pair" | "connect", settings?: unknown) {
   autoPair.disabled = true;
-  status.textContent = "Connecting to your terminal…";
+  showStatus("Connecting to your terminal…");
   try {
     const result = await chrome.runtime.sendMessage({ type, settings });
     if (!result?.ok)
-      status.textContent =
-        result?.error ?? "Unable to connect. Start forgive-me and retry.";
+      showStatus(
+        result?.error ?? "Unable to connect. Start remover and retry.",
+      );
     else await show();
   } catch {
     status.textContent =
@@ -83,7 +109,7 @@ document.querySelector("#discover")!.addEventListener("click", (event) => {
     .sendMessage({ type: "discover" })
     .then((result) => {
       status.textContent = result?.ok
-        ? "Discovery refreshed. Select Connect automatically."
+        ? "Discovery refreshed. Select Connect terminal."
         : (result?.error ?? "Discovery unavailable");
     })
     .catch(() => {
@@ -96,7 +122,7 @@ document.querySelector("#discover")!.addEventListener("click", (event) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "session") return;
   if (changes.connectionStatus)
-    status.textContent = String(changes.connectionStatus.newValue);
+    showStatus(String(changes.connectionStatus.newValue));
   if (changes.accountHandle) showAccount(changes.accountHandle.newValue);
 });
 // Opening setup must not interrupt an already connected cleanup session.
@@ -104,6 +130,6 @@ try {
   if ((await show()) !== "Connected")
     await connect(stored.pairingMode === "manual" ? "connect" : "auto_pair");
 } catch {
-  status.textContent = "Start forgive-me, then select Connect automatically.";
+  status.textContent = "Start remover, then select Connect terminal.";
 }
 export {};

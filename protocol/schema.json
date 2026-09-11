@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "forgive-me bridge v1",
+  "title": "remover bridge v1",
   "oneOf": [
     {
       "type": "object",

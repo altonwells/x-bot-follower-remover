@@ -15,6 +15,7 @@ class BackgroundCLI(unittest.TestCase):
     def test_background_status_pause_stop(self):
         with tempfile.TemporaryDirectory(prefix='fm-bg-', dir='/private/tmp') as folder:
             root = Path(folder)
+            worker_env = dict(os.environ, HOME=folder)
             (root / 'config.json').write_text(json.dumps({'token': 'a' * 64, 'port': 0, 'extension_id': None}))
             db = sqlite3.connect(root / 'cleanup.sqlite')
             db.execute('CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
@@ -23,19 +24,22 @@ class BackgroundCLI(unittest.TestCase):
                 db.execute('INSERT INTO settings VALUES (?,?)', (key, json.dumps(value)))
             db.commit()
             db.close()
-            worker = subprocess.Popen([BINARY, '--data-dir', folder, 'worker'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            worker = subprocess.Popen([BINARY, '--data-dir', folder, 'worker'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, env=worker_env)
             try:
                 for _ in range(100):
                     if (root / 'worker.sock').exists(): break
                     if worker.poll() is not None: self.fail(worker.communicate()[1].decode())
                     time.sleep(.05)
                 def control(action):
-                    return subprocess.check_output([BINARY, '--data-dir', folder, action], text=True, timeout=5)
+                    return subprocess.check_output([BINARY, '--data-dir', folder, action], text=True, timeout=5, env=worker_env)
                 self.assertIn('1 queued', control('status'))
+                host = root / 'Library/Application Support/Google/Chrome/NativeMessagingHosts/com.x_bot_follower_remover.pairing.json'
+                self.assertTrue(host.exists(), 'A restarted worker must register the renamed pairing host')
                 self.assertIn('Waiting for Chrome', control('pause'))
                 self.assertIsNone(worker.poll())
                 pid, master = pty.fork()
                 if pid == 0:
+                    os.environ['HOME'] = folder
                     os.environ['TERM'] = 'xterm-256color'
                     os.execl(BINARY, BINARY, '--data-dir', folder)
                 output = bytearray()

@@ -222,3 +222,16 @@ Baseline: cargo test --offline --test cleanup --test controller --test presentat
 Installer tests reported Ran 7 tests, OK. The release alternate-screen/resize test reported Ran 1 test, OK. The packaged background-process test reported Ran 1 test, OK, including attaching a real PTY monitor, closing it, and confirming the worker remained alive. Its first extended harness failed to drain terminal output while waiting for exit; draining the PTY during shutdown corrected the harness. Only isolated test processes were stopped. Total distinct checks: 145 tests.
 
 The start screen, minimum-size approval, background monitor, and processing-settings previews were rendered offscreen and visually inspected with fictional data. No live followers were removed, no cleanup job was started, and no live overnight run is claimed.
+
+
+## Remover rename and Chrome connection page (v0.3.0)
+
+The Cargo package and GitHub metadata use x-bot-follower-remover. The installed binary and Clap command use remover. The Chrome extension includes four R icon sizes and a responsive light connection page. Pairing uses the existing native pipe and storage events; opening a connected page does not reconnect or approve cleanup. The page clears readiness when the account or connection is lost.
+
+The legacy data folder is reused to preserve the database and process lock. Installer tests cover upgrading an old ownership marker and legacy environment overrides. The renamed native host is registered before saved-job handoff and during worker startup; the process test verifies this under an isolated HOME. Third-party package entries and lock-file checksums were compared with HEAD and remain unchanged.
+
+Checks exited 0: cargo test --offline --locked (69 tests), cargo clippy --offline --locked --all-targets -- -D warnings, extension npm run check and npm test (72 tests), release build/bundle, Python installer suite (8 tests), terminal PTY suite (1), and background CLI suite (1). Total: 151 tests. A pre-existing TypeScript inference failure in parsers.ts was fixed with an explicit boolean annotation; parsing behavior was not changed. Pairing-copy follow-up checks used the setup/controller suites and extension suite.
+
+Simplify: one fresh reuse reviewer and two independent reviewers assigned new quality/efficiency tasks (the thread limit prevented additional fresh agents). Reuse and efficiency returned clean; no speculative simplifications were applied (simplification line delta: 0). Quality identified two upgrade defects: native registration after saved-job handoff and a legacy marker rejected as unmanaged. Both were fixed using the existing registration and ownership checks, then independently re-reviewed. No findings were deferred.
+
+Chrome screenshots were rendered at 1200px and 500px widths in isolated headless profiles using the actual bundled page and a fictional Chrome-service fixture. The page, R mark, and terminal start preview were visually inspected. Product screenshots contain fictional accounts. These checks did not connect to the user's X account or start a live removal queue.

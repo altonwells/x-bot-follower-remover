@@ -1,13 +1,13 @@
 //! Regressions for visible safety controls and bounded terminal navigation.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use forgive_me::{
+use ratatui::{Terminal, backend::TestBackend};
+use std::{collections::VecDeque, path::Path};
+use x_bot_follower_remover::{
     app::{App, Batch, Mode},
     model::Account,
     store::Store,
     ui,
 };
-use ratatui::{Terminal, backend::TestBackend};
-use std::{collections::VecDeque, path::Path};
 
 fn app() -> App {
     let mut app = App::new(Store::open(Path::new(":memory:")).unwrap(), true).unwrap();
@@ -135,7 +135,7 @@ fn removal_rules_and_workflow_name_direction_and_next_action() {
 
 #[tokio::test]
 async fn selected_unchecked_accounts_and_active_work_are_visible_in_the_queue_list() {
-    use forgive_me::protocol::{Command, Work};
+    use x_bot_follower_remover::protocol::{Command, Work};
     let mut app = app();
     app.accounts.insert(
         "1".into(),
@@ -190,8 +190,8 @@ fn sparse_old_is_a_candidate_and_missing_coverage_is_review_not_keep() {
             verified: Some(false),
             protected: Some(false),
             posts: Some(2),
-            checked_at_ms: Some(forgive_me::model::now_ms()),
-            last_activity_ms: Some(forgive_me::model::now_ms() - 657 * 86_400_000),
+            checked_at_ms: Some(x_bot_follower_remover::model::now_ms()),
+            last_activity_ms: Some(x_bot_follower_remover::model::now_ms() - 657 * 86_400_000),
             activity_note: "Replies coverage incomplete".into(),
             ..Default::default()
         },
@@ -218,9 +218,9 @@ fn stream_continues_during_cooldown_and_confirmed_tags_move_downward() {
         ids: VecDeque::new(),
         policy: app.policy.clone(),
     });
-    app.pacing.until_ms = forgive_me::model::now_ms() + 60_000;
+    app.pacing.until_ms = x_bot_follower_remover::model::now_ms() + 60_000;
     app.animation.removed("departed_user".into());
-    assert!(forgive_me::ritual::animating(&app));
+    assert!(x_bot_follower_remover::ritual::animating(&app));
     let top = screen(&mut app, 140, 42, 0);
     let down = screen(&mut app, 140, 42, 80);
     assert!(top.contains("✓ REMOVED"));
@@ -251,7 +251,7 @@ fn auto_consent_and_system_settings_fit_small_terminals() {
 #[test]
 fn simple_start_and_worker_controls_stay_visible_at_small_sizes() {
     let mut app = app();
-    app.policy = forgive_me::model::Policy::cleanup();
+    app.policy = x_bot_follower_remover::model::Policy::cleanup();
     for (w, h) in [(52, 12), (120, 34)] {
         app.mode = Mode::Browse;
         let text = screen(&mut app, w, h, 0);
@@ -261,7 +261,7 @@ fn simple_start_and_worker_controls_stay_visible_at_small_sizes() {
         let text = screen(&mut app, w, h, 0);
         assert!(text.contains("restore-followers"));
         assert!(text.contains("y Start cleanup"));
-        let state:forgive_me::background::Status=serde_json::from_value(serde_json::json!({"handle":"example","state":"Running","remaining":3,"removed":9,"uncertain":1,"wait_seconds":42,"message":"Checking account"})).unwrap();
+        let state:x_bot_follower_remover::background::Status=serde_json::from_value(serde_json::json!({"handle":"example","state":"Running","remaining":3,"removed":9,"uncertain":1,"wait_seconds":42,"message":"Checking account"})).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
         terminal
             .draw(|f| ui::render_worker(f, &state, None, false, false))

@@ -363,7 +363,7 @@ impl App {
     }
     async fn start_scan(&mut self) -> Result<()> {
         if !self.demo && !self.capabilities.iter().any(|c| c == "adapter:2") {
-            bail!("Reload forgive-me in chrome://extensions, then Save & connect before scanning");
+            bail!("Reload remover in chrome://extensions, then Connect terminal before scanning");
         }
         if self.owner.is_empty() || self.sender.is_none() {
             bail!("Connect Chrome and identify the signed-in account first");
@@ -821,7 +821,7 @@ impl App {
                 setup.go(Step::Install);
                 crate::setup::copy(setup.extension_dir.display().to_string()).await?;
                 crate::setup::open_chrome("chrome://extensions".into()).await?;
-                self.log("Folder copied. In Chrome, Load unpacked or Reload forgive-me. Waiting for connection.");
+                self.log("Folder copied. In Chrome, Load unpacked or Reload remover. Waiting for connection.");
             }
             KeyCode::Char('o') => {
                 let id = crate::native::extension_id(&setup.extension_dir)?;
@@ -843,7 +843,7 @@ impl App {
             KeyCode::Enter | KeyCode::Char('b') => {
                 if setup.manual {
                     crate::setup::copy(setup.token.clone()).await?;
-                    self.log("Secret copied. Paste in Manual connection and repair.");
+                    self.log("Secret copied. Paste in Connection help.");
                 } else if self.sender.is_some()
                     && !self.handle.is_empty()
                     && key.code == KeyCode::Enter
@@ -868,9 +868,7 @@ impl App {
                     let id = crate::native::extension_id(&setup.extension_dir)?;
                     crate::setup::open_chrome(format!("chrome-extension://{id}/options.html"))
                         .await?;
-                    self.log(
-                        "Select Connect automatically in the extension. Waiting for connection.",
-                    );
+                    self.log("Select Connect terminal in the extension. Waiting for connection.");
                 }
             }
             KeyCode::Esc | KeyCode::Left => {
@@ -948,7 +946,9 @@ impl App {
         }
         if !self.demo && !self.capabilities.iter().any(|c| c == "adapter:2") {
             self.paused = true;
-            self.log("Chrome adapter needs an update. Reload the extension, then Save & connect.");
+            self.log(
+                "Chrome adapter needs an update. Reload the extension, then Connect terminal.",
+            );
             return Ok(());
         }
         if !self.demo && self.scan.adapter_revision < 2 && !self.scan.phase.is_empty() {
@@ -1314,7 +1314,7 @@ impl App {
                 }
                 if !self.demo && !capabilities.iter().any(|c| c == "adapter:2") {
                     bail!(
-                        "Chrome extension is out of date. Reload forgive-me in chrome://extensions, then Save & connect."
+                        "Chrome extension is out of date. Reload remover in chrome://extensions, then Connect terminal."
                     );
                 }
                 if owner_id.is_empty() || handle.is_empty() {

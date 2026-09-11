@@ -12,7 +12,7 @@ Also compared: twitter-api-client (1,894 stars, last push 2024-05-22; stale), Tw
 
 `manifest.json` pins each clone and records its URL. Clones sit beside this file, retain their own Git histories/licenses, and are ignored by the app repository. They are not shipped, imported, or run against X. To recreate, clone each repository into its named folder and check out the manifest commit.
 
-## Findings used in forgive-me
+## Findings used in remover
 
 - `twitter-web-exporter/src/types/user.ts` and `src/utils/api.ts`: verification moved to `verification.verified`; counts to `relationship_counts` and `tweet_counts`. Missing values must stay unknown for cleanup decisions.
 - `twitter-web-exporter/src/modules/user-tweets/api.ts`: August migration splits posting into `UserOriginalsTimeline`, `UserRepliesTimeline`, and `UserRepostsTimeline`. Negative inactivity evidence must cover all three, and original-post dates cannot date reposts.

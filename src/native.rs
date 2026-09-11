@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const HOST: &str = "com.forgive_me.pairing";
+pub const HOST: &str = "com.x_bot_follower_remover.pairing";
 
 /// Chromium's GenerateIdForPath: first 128 bits of SHA-256, encoded as a..p.
 /// The packaged extension has no manifest key; Chrome uses its absolute path.
@@ -76,7 +76,7 @@ pub fn register_at(
     let wrapper = executable
         .parent()
         .context("Executable folder unavailable")?
-        .join("forgive-me-native-host.sh");
+        .join("remover-native-host.sh");
     let script = format!(
         "#!/bin/sh\nexec {} --data-dir {} native-host \"$@\"\n",
         quote(executable)?,
@@ -87,7 +87,7 @@ pub fn register_at(
     write_private(
         &host_dir.join(format!("{HOST}.json")),
         &serde_json::to_vec_pretty(&json!({
-            "name": HOST, "description": "Connect forgive-me to its Chrome extension",
+            "name": HOST, "description": "Connect remover to its Chrome extension",
             "path": wrapper, "type": "stdio", "allowed_origins": [format!("chrome-extension://{id}/")],
         }))?,
         false,
@@ -99,7 +99,7 @@ pub fn unregister() -> Result<()> {
     let wrapper = executable
         .parent()
         .context("Executable folder unavailable")?
-        .join("forgive-me-native-host.sh");
+        .join("remover-native-host.sh");
     let path = host_dir()?.join(format!("{HOST}.json"));
     if let Ok(bytes) = fs::read(&path) {
         let manifest: Value = serde_json::from_slice(&bytes)?;
@@ -126,9 +126,9 @@ pub fn reply(data: &Path, extension: &Path, origin: &str, request: Value) -> Res
         .read(true)
         .write(true)
         .open(data.join("app.lock"))
-        .context("Start forgive-me in your terminal first")?;
+        .context("Start remover in your terminal first")?;
     match lock.try_lock_exclusive() {
-        Ok(()) => anyhow::bail!("Start forgive-me in your terminal first"),
+        Ok(()) => anyhow::bail!("Start remover in your terminal first"),
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
         Err(e) => return Err(e.into()),
     }
@@ -144,7 +144,7 @@ pub fn reply(data: &Path, extension: &Path, origin: &str, request: Value) -> Res
             .extension_id
             .as_ref()
             .is_none_or(|paired| paired == &id),
-        "A different extension is paired. Run forgive-me pair --reset with the TUI closed"
+        "A different extension is paired. Run remover pair --reset with the TUI closed"
     );
     Ok(json!({"ok":true, "v":1, "port":settings.port, "token":settings.token, "extension_id":id}))
 }
@@ -249,13 +249,13 @@ mod tests {
                 extension_id(&extension).unwrap()
             )])
         );
-        let script = fs::read_to_string(temp.path().join("forgive-me-native-host.sh")).unwrap();
+        let script = fs::read_to_string(temp.path().join("remover-native-host.sh")).unwrap();
         assert!(script.contains("bin'\\''s app'"));
         assert!(script.contains("data $(literal)'"));
         assert!(!script.contains("token"));
         // Chrome starts the helper from the executable folder, not the TUI's cwd.
         register_at(&registry, &binary, Path::new("."), &extension).unwrap();
-        let script = fs::read_to_string(temp.path().join("forgive-me-native-host.sh")).unwrap();
+        let script = fs::read_to_string(temp.path().join("remover-native-host.sh")).unwrap();
         assert!(script.contains(&format!(
             "--data-dir {} native-host",
             quote(&Path::new(".").canonicalize().unwrap()).unwrap()

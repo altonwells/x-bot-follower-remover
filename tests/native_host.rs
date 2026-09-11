@@ -1,5 +1,4 @@
 //! Real native-message child process -> authenticated local WebSocket. No Chrome or X.
-use forgive_me::{bridge, config, native};
 use fs2::FileExt;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -13,6 +12,7 @@ use tokio_tungstenite::{
     connect_async,
     tungstenite::{Message, client::IntoClientRequest},
 };
+use x_bot_follower_remover::{bridge, config, native};
 
 #[tokio::test]
 async fn native_pairing_connects_to_the_real_bridge_without_manual_secrets() {
@@ -33,11 +33,11 @@ async fn native_pairing_connects_to_the_real_bridge_without_manual_secrets() {
         .unwrap();
     lock.lock_exclusive().unwrap();
     // Match an installed bundle without depending on an existing npm build.
-    let extension = data.path().join("forgive-me-extension");
+    let extension = data.path().join("remover-extension");
     fs::create_dir(&extension).unwrap();
     fs::write(extension.join("manifest.json"), "{}").unwrap();
-    let binary = data.path().join("forgive-me");
-    fs::copy(env!("CARGO_BIN_EXE_forgive-me"), &binary).unwrap();
+    let binary = data.path().join("remover");
+    fs::copy(env!("CARGO_BIN_EXE_remover"), &binary).unwrap();
     let id = native::extension_id(&extension).unwrap();
     let mut host = Command::new(binary)
         .arg("--data-dir")

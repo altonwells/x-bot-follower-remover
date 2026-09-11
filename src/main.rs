@@ -7,15 +7,6 @@ use crossterm::{
     },
     execute,
 };
-use forgive_me::{
-    app::App,
-    bridge::{self, BridgeEvent},
-    config,
-    model::{Account, Policy, now_ms},
-    protocol::{ClientMessage, Command, Work, WorkResult},
-    store::Store,
-    ui,
-};
 use fs2::FileExt;
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -25,9 +16,19 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, sync::mpsc};
+use x_bot_follower_remover::{
+    app::App,
+    bridge::{self, BridgeEvent},
+    config,
+    model::{Account, Policy, now_ms},
+    protocol::{ClientMessage, Command, Work, WorkResult},
+    store::Store,
+    ui,
+};
 
 #[derive(Parser)]
 #[command(
+    name = "remover",
     version,
     about = "A terminal-controlled X follower cleaner. X work stays in Chrome."
 )]
@@ -75,8 +76,8 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     if let Some(CliCommand::NativeHost { origin }) = &args.command {
         let dir = config::data_dir(args.data_dir.clone())?;
-        let extension = forgive_me::setup::extension_dir();
-        return forgive_me::native::serve(
+        let extension = x_bot_follower_remover::setup::extension_dir();
+        return x_bot_follower_remover::native::serve(
             &dir,
             &extension,
             origin,
@@ -85,7 +86,7 @@ async fn main() -> Result<()> {
         );
     }
     if matches!(args.command, Some(CliCommand::UnregisterHost)) {
-        return forgive_me::native::unregister();
+        return x_bot_follower_remover::native::unregister();
     }
     let (events_tx, events_rx) = mpsc::channel(64);
     if args.demo {
@@ -115,14 +116,14 @@ async fn main() -> Result<()> {
         .write(true)
         .open(dir.join("app.lock"))?;
     let control = match args.command {
-        Some(CliCommand::Status) => Some(forgive_me::background::Control::Status),
-        Some(CliCommand::Pause) => Some(forgive_me::background::Control::Pause),
-        Some(CliCommand::Resume) => Some(forgive_me::background::Control::Resume),
-        Some(CliCommand::Stop) => Some(forgive_me::background::Control::Stop),
+        Some(CliCommand::Status) => Some(x_bot_follower_remover::background::Control::Status),
+        Some(CliCommand::Pause) => Some(x_bot_follower_remover::background::Control::Pause),
+        Some(CliCommand::Resume) => Some(x_bot_follower_remover::background::Control::Resume),
+        Some(CliCommand::Stop) => Some(x_bot_follower_remover::background::Control::Stop),
         _ => None,
     };
     if let Some(control) = control {
-        let status = forgive_me::background::request(&dir, control).await?;
+        let status = x_bot_follower_remover::background::request(&dir, control).await?;
         println!(
             "@{} · {} · {} queued · {} removed · {} uncertain · next in {}s\n{}",
             status.handle,
@@ -139,7 +140,7 @@ async fn main() -> Result<()> {
         if args.command.is_none() && dir.join("worker.sock").exists() {
             return monitor(&dir).await;
         }
-        anyhow::bail!("forgive-me is already running for this data directory");
+        anyhow::bail!("remover is already running for this data directory");
     }
     let mut config = config::load(&dir)?;
     if let Some(port) = args.port {
@@ -149,12 +150,12 @@ async fn main() -> Result<()> {
     match args.command {
         Some(CliCommand::Pair { reset }) => {
             if reset {
-                config.token = forgive_me::model::new_id();
+                config.token = x_bot_follower_remover::model::new_id();
                 config.extension_id = None;
                 config::save(&dir, &config)?;
             }
             println!(
-                "forgive-me pairing\n\nPort: {}\nPairing secret: {}\n\nPaste these into the extension options, then run forgive-me.\nKeep the secret private.\nData: {}",
+                "remover pairing\n\nPort: {}\nPairing secret: {}\n\nPaste these into the extension options, then run remover.\nKeep the secret private.\nData: {}",
                 config.port,
                 config.token,
                 dir.display()
@@ -165,7 +166,7 @@ async fn main() -> Result<()> {
             let s = Store::open(&dir.join("cleanup.sqlite"))?;
             let owner: String = s.get("last_owner")?.unwrap_or_default();
             println!(
-                "forgive-me {}\nData: {}\nBridge: ws://127.0.0.1:{}/bridge\nPaired extension: {}\nLast owner: {}\nUnresolved actions: {}\n\nRun the TUI and connect Chrome to check live adapter readiness.",
+                "remover {}\nData: {}\nBridge: ws://127.0.0.1:{}/bridge\nPaired extension: {}\nLast owner: {}\nUnresolved actions: {}\n\nRun the TUI and connect Chrome to check live adapter readiness.",
                 env!("CARGO_PKG_VERSION"),
                 dir.display(),
                 config.port,
@@ -189,21 +190,32 @@ async fn main() -> Result<()> {
         .await
         .context("Local bridge port unavailable; use --port to choose another")?;
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
+    if let Err(error) = x_bot_follower_remover::native::register(
+        &dir,
+        &x_bot_follower_remover::setup::extension_dir(),
+    ) {
+        app.log(format!(
+            "Automatic pairing unavailable: {error}. Manual pairing remains available."
+        ));
+    }
     let background = matches!(args.command, Some(CliCommand::Worker));
     if !background && app.auto_policy.as_ref().is_some_and(|p| p.simple_cleanup) {
         drop(listener);
         drop(lock);
-        forgive_me::background::spawn(&dir)?;
+        x_bot_follower_remover::background::spawn(&dir)?;
         for _ in 0..50 {
-            if forgive_me::background::request(&dir, forgive_me::background::Control::Status)
-                .await
-                .is_ok()
+            if x_bot_follower_remover::background::request(
+                &dir,
+                x_bot_follower_remover::background::Control::Status,
+            )
+            .await
+            .is_ok()
             {
                 return monitor(&dir).await;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        anyhow::bail!("Worker could not resume. Run forgive-me doctor.");
+        anyhow::bail!("Worker could not resume. Run remover doctor.");
     }
     if !background && app.auto_policy.is_none() && app.batch.is_none() {
         let mut simple = Policy::cleanup();
@@ -213,16 +225,9 @@ async fn main() -> Result<()> {
     if !background {
         app.configure_setup(&config);
     }
-    if !background
-        && let Err(error) = forgive_me::native::register(&dir, &forgive_me::setup::extension_dir())
-    {
-        app.log(format!(
-            "Automatic pairing unavailable: {error}. Manual pairing remains available."
-        ));
-    }
     let bridge = tokio::spawn(bridge::serve(listener, config, dir.clone(), events_tx));
     let result = if background {
-        forgive_me::background::run(app, events_rx, &dir)
+        x_bot_follower_remover::background::run(app, events_rx, &dir)
             .await
             .map(|_| false)
     } else {
@@ -232,14 +237,14 @@ async fn main() -> Result<()> {
     let _ = bridge.await;
     drop(lock);
     if result? {
-        forgive_me::background::spawn(&dir)?;
+        x_bot_follower_remover::background::spawn(&dir)?;
         for _ in 0..50 {
             if dir.join("worker.sock").exists() {
                 return monitor(&dir).await;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        anyhow::bail!("Worker did not start. Progress is saved; reopen forgive-me.");
+        anyhow::bail!("Worker did not start. Progress is saved; reopen remover.");
     }
     Ok(())
 }
@@ -250,7 +255,7 @@ async fn run(
 ) -> Result<bool> {
     anyhow::ensure!(
         std::io::stdin().is_terminal() && stdout().is_terminal(),
-        "Open forgive-me in an interactive terminal (no pipes or output redirection)."
+        "Open remover in an interactive terminal (no pipes or output redirection)."
     );
     struct Restore;
     impl Drop for Restore {
@@ -298,7 +303,7 @@ async fn run(
             if !no_animation && (app.batch.is_some() || app.auto_policy.is_some()) && !app.paused && app.sender.is_some() {
                 app.animation.advance(elapsed);
             }
-            if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at || app.pacing.until_ms > now_ms()) { redraw = false; }
+            if (no_animation || !x_bot_follower_remover::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at || app.pacing.until_ms > now_ms()) { redraw = false; }
             app.tick().await
          },
         };
@@ -452,10 +457,10 @@ async fn demo_worker(
 }
 
 async fn monitor(dir: &Path) -> Result<()> {
-    use forgive_me::background::{Control, request};
+    use x_bot_follower_remover::background::{Control, request};
     anyhow::ensure!(
         std::io::stdin().is_terminal() && stdout().is_terminal(),
-        "Use forgive-me status for noninteractive output"
+        "Use remover status for noninteractive output"
     );
     struct Restore;
     impl Drop for Restore {

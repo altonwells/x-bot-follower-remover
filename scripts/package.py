@@ -15,13 +15,13 @@ dist.mkdir(exist_ok=True)
 host = next(line.split(': ', 1)[1] for line in subprocess.check_output(['rustc', '-vV'], text=True).splitlines() if line.startswith('host: '))
 metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--offline', '--filter-platform', host, '--format-version', '1'], cwd=root))
 
-with tempfile.TemporaryDirectory(prefix='forgive-me-package-') as temporary:
+with tempfile.TemporaryDirectory(prefix='remover-package-') as temporary:
     stage = Path(temporary)
-    bundle = stage / 'forgive-me'
+    bundle = stage / 'remover'
     bundle.mkdir()
-    shutil.copyfile(root / 'target/release/forgive-me', bundle / 'forgive-me')
-    (bundle / 'forgive-me').chmod(0o755)
-    shutil.copytree(root / 'extension/dist', bundle / 'forgive-me-extension', copy_function=shutil.copyfile)
+    shutil.copyfile(root / 'target/release/remover', bundle / 'remover')
+    (bundle / 'remover').chmod(0o755)
+    shutil.copytree(root / 'extension/dist', bundle / 'remover-extension', copy_function=shutil.copyfile)
     for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh']:
         shutil.copyfile(root / name, bundle / name)
     for name in ['docs', 'protocol']:
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='forgive-me-package-') as temporary:
     licenses.mkdir()
     lines = ['# Dependency license inventory', '', 'Generated from Cargo.lock and host package metadata, including development dependencies.', '']
     for package in sorted(metadata['packages'], key=lambda p: (p['name'], p['version'])):
-        if package['name'] == 'forgive-me':
+        if package['name'] == 'x-bot-follower-remover':
             continue
         lines.append(f"- {package['name']} {package['version']}: {package.get('license') or 'See package license file'}")
         for source in Path(package['manifest_path']).parent.iterdir():
@@ -40,27 +40,27 @@ with tempfile.TemporaryDirectory(prefix='forgive-me-package-') as temporary:
                 # Use current timestamps; registry epoch timestamps can confuse synced folders.
                 shutil.copyfile(source, folder / source.name)
     (bundle / 'DEPENDENCY_LICENSES.md').write_text('\n'.join(lines) + '\n')
-    extension_zip = stage / 'forgive-me-extension.zip'
+    extension_zip = stage / 'remover-extension.zip'
     with zipfile.ZipFile(extension_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted((bundle / 'forgive-me-extension').rglob('*')):
+        for path in sorted((bundle / 'remover-extension').rglob('*')):
             if path.is_file():
                 archive.write(path, path.relative_to(bundle))
-    full_zip = stage / f'forgive-me-macos-{platform.machine()}.zip'
+    full_zip = stage / f'remover-macos-{platform.machine()}.zip'
     with zipfile.ZipFile(full_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(bundle.rglob('*')):
             if path.is_file():
                 archive.write(path, path.relative_to(stage))
-    products = [bundle / 'forgive-me', extension_zip, full_zip]
+    products = [bundle / 'remover', extension_zip, full_zip]
     checksums = ''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in products)
     for path in products:
         pending = dist / ('.' + path.name + '.pending')
         shutil.copyfile(path, pending)
-        if path.name == 'forgive-me':
+        if path.name == 'remover':
             pending.chmod(0o755)
         pending.replace(dist / path.name)
     (dist / 'SHA256SUMS').write_text(checksums)
     for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh', 'DEPENDENCY_LICENSES.md']:
         shutil.copyfile(bundle / name, dist / name)
-    for name in ['docs', 'protocol', 'forgive-me-extension']:
+    for name in ['docs', 'protocol', 'remover-extension']:
         shutil.copytree(bundle / name, dist / name, dirs_exist_ok=True, copy_function=shutil.copyfile)
-    print(f'Binary: {dist / "forgive-me"}\nExtension: {dist / extension_zip.name}\nBundle: {dist / full_zip.name}')
+    print(f'Binary: {dist / "remover"}\nExtension: {dist / extension_zip.name}\nBundle: {dist / full_zip.name}')

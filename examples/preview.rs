@@ -1,6 +1,13 @@
 //! Render deterministic, fictional UI fixtures without a terminal or X connection.
-//! cargo run --example preview > /tmp/forgive-me-preview.json
-use forgive_me::{
+//! cargo run --example preview > /tmp/remover-preview.json
+use ratatui::{
+    Terminal,
+    backend::TestBackend,
+    style::{Color, Modifier},
+};
+use serde_json::{Value, json};
+use std::{collections::VecDeque, path::Path};
+use x_bot_follower_remover::{
     app::{App, Batch, Mode},
     config::Config,
     model::{Account, now_ms},
@@ -9,13 +16,6 @@ use forgive_me::{
     store::Store,
     ui,
 };
-use ratatui::{
-    Terminal,
-    backend::TestBackend,
-    style::{Color, Modifier},
-};
-use serde_json::{Value, json};
-use std::{collections::VecDeque, path::Path};
 
 fn color(c: Color) -> String {
     match c {
@@ -193,13 +193,13 @@ fn main() {
     app.mode = Mode::Browse;
     app.auto_policy = None;
     app.batch = None;
-    app.policy = forgive_me::model::Policy::cleanup();
+    app.policy = x_bot_follower_remover::model::Policy::cleanup();
     app.handle = "demo_account".into();
     app.notice = "Ready. Enter starts cleanup.".into();
     scenes.push(capture(&mut app, "simple-start", 120, 34));
     app.mode = Mode::AutoConfirm;
     scenes.push(capture(&mut app, "simple-confirm-minimum", 52, 12));
-    let state: forgive_me::background::Status = serde_json::from_value(json!({
+    let state: x_bot_follower_remover::background::Status = serde_json::from_value(json!({
         "handle":"demo_account", "state":"Cooling down", "remaining":1,"removed":29,"uncertain":1,
         "wait_seconds":42,"message":"Next: checking @quiet_orbit. One account is scheduled for recovery.",
         "collected":3048,"checked":81,"kept":52,"retry_later":1,"policy":app.policy,

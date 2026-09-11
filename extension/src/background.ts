@@ -78,7 +78,7 @@ async function connect(
       if (mode === "auto" || !validSettings(settings)) {
         if (attempt === generation)
           await setStatus(
-            "Start forgive-me in your terminal, then select Connect automatically.",
+            "Start remover in your terminal, then select Connect terminal.",
           );
         throw error;
       }
@@ -87,7 +87,7 @@ async function connect(
   if (attempt !== generation) return;
   if (!validSettings(settings))
     throw Error(
-      "Use Connect automatically, or enter valid manual pairing settings.",
+      "Use Connect terminal, or enter valid manual pairing settings.",
     );
   const chosen = {
     port: settings.port,
@@ -126,7 +126,7 @@ async function connect(
       );
   };
   ws.onerror = () => {
-    void setStatus("Start the forgive-me TUI, then Connect");
+    void setStatus("Start the remover TUI, then Connect");
   };
   ws.onclose = () => {
     clearTimeout(timeout);

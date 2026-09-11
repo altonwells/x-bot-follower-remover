@@ -12,11 +12,11 @@ The Chrome Manifest V3 extension connects with a random pairing secret.
 The first authenticated connection fixes the allowed extension identity.
 X cookies and authorization headers stay in Chrome.
 
-On macOS, TUI startup registers the native messaging host `com.forgive_me.pairing` for the current user.
+On macOS, TUI and worker startup register the native messaging host `com.x_bot_follower_remover.pairing` for the current user.
 A small shell wrapper starts the same executable in its hidden `native-host` mode.
 It passes the active data folder as an absolute path.
 Chrome exchanges one length-prefixed JSON request and response over standard input and output.
-The host returns the existing port and secret only while the corresponding TUI holds its process lock.
+The host returns the existing port and secret only while the corresponding TUI or worker holds its process lock.
 It accepts only the bundled extension's origin and rejects a conflicting saved extension identity.
 The secret does not enter a URL, HTTP endpoint, log, or clipboard during automatic pairing.
 
@@ -90,7 +90,7 @@ Run the installer and terminal tests:
 
 ```sh
 python3 tests/install_test.py
-python3 tests/terminal_test.py target/release/forgive-me
+python3 tests/terminal_test.py target/release/remover
 ```
 
 The package contains the executable, extension, documentation, licenses, and checksums.
@@ -106,8 +106,8 @@ The image renderer uses macOS AppKit without a visible window.
 From the repository folder, run:
 
 ```sh
-cargo run --example preview > /tmp/forgive-me-preview.json
-swift scripts/render-preview.swift /tmp/forgive-me-preview.json /tmp/forgive-me-previews
+cargo run --example preview > /tmp/remover-preview.json
+swift scripts/render-preview.swift /tmp/remover-preview.json /tmp/remover-previews
 ```
 
 ## Current scope

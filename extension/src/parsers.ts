@@ -210,7 +210,7 @@ export function postingEvidence(
     for (const i of instructions(json)) {
       if (i.type === "TimelinePinEntry") {
         const start = times.length;
-        const wasMalformed = malformed;
+        const wasMalformed: boolean = malformed;
         const item = i.entry?.content?.itemContent ?? i.entry?.content;
         if (item?.tweet_results?.result) take(item.tweet_results.result);
         // A recent authored pin proves activity. An old pin cannot prove inactivity.

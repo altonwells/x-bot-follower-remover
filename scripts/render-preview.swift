@@ -1,5 +1,5 @@
 // macOS-only, offscreen renderer for examples/preview.rs. No app or window is opened.
-// swift scripts/render-preview.swift /tmp/forgive-me-preview.json docs/previews
+// swift scripts/render-preview.swift /tmp/remover-preview.json docs/previews
 import AppKit
 import Foundation
 

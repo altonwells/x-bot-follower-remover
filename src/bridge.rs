@@ -113,7 +113,7 @@ async fn connection(
         .as_ref()
         .is_some_and(|id| id != &extension_id)
     {
-        bail!("Extension ID differs from the paired extension; run forgive-me pair --reset");
+        bail!("Extension ID differs from the paired extension; run remover pair --reset");
     }
     if config.extension_id.is_none() {
         config.extension_id = Some(extension_id);

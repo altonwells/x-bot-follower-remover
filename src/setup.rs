@@ -67,7 +67,7 @@ pub fn extension_dir() -> PathBuf {
     let bundled = std::env::current_exe()
         .ok()
         .and_then(|p| p.canonicalize().ok())
-        .and_then(|p| p.parent().map(|p| p.join("forgive-me-extension")))
+        .and_then(|p| p.parent().map(|p| p.join("remover-extension")))
         .filter(|p| p.join("manifest.json").is_file());
     bundled.unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("extension/dist"))
 }
@@ -141,7 +141,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .areas(area);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("◈ forgive-me", bold(MINT)),
+            Span::styled("◈ remover", bold(MINT)),
             Span::styled(
                 format!("   SETUP  /  v{}", env!("CARGO_PKG_VERSION")),
                 fg(MUTED),
@@ -200,7 +200,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         (
             " Manual connection ",
             format!(
-                "Open Manual connection and repair in the extension.\nPort: {}\nSecret: {}\n\nPaste the secret there, then Save & connect.",
+                "Open Connection help in the extension.\nPort: {}\nSecret: {}\n\nPaste the secret there, then Save & connect.",
                 setup.port,
                 if setup.revealed {
                     &setup.token
@@ -242,7 +242,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         (" Add the Chrome extension ", "Press Enter to open Chrome and copy the folder path.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n\nPairing starts when the extension loads.".into(),
         "Enter  Set up Chrome", "o already installed  m manual  q quit")
     } else {
-        (" Connect your extension ", "Open the extension and select Connect automatically.\nKeep this terminal running.\n\nNeed to install or update it? Press i to open Chrome's\nextension page, then Load unpacked or Reload.\n\nThis screen advances when Chrome connects.".into(),
+        (" Connect your extension ", "Open the extension and select Connect terminal.\nKeep this terminal running.\n\nNeed to install or update it? Press i to open Chrome's\nextension page, then Load unpacked or Reload.\n\nThis screen advances when Chrome connects.".into(),
         "Enter  Open extension", "i install / reload  m manual  q quit")
     };
     let block = theme::panel(title).border_style(fg(ICE));

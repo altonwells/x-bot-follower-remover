@@ -49,7 +49,7 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
     frame.render_widget(Block::default().style(fg(TEXT).bg(BG)), area);
     if area.width < 52 || area.height < 12 {
         frame.render_widget(
-            Paragraph::new("forgive-me\nResize to at least 52 × 12.\nCtrl-C pauses and quits.")
+            Paragraph::new("remover\nResize to at least 52 × 12.\nCtrl-C pauses and quits.")
                 .style(fg(MUTED))
                 .wrap(Wrap { trim: true }),
             area,
@@ -77,7 +77,7 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
                 Line::from("Posts, replies and reposts count as activity."),
                 Line::from(""),
                 Line::from("Checks, queueing and retries run automatically in the background."),
-                Line::from("Close the terminal; reopen forgive-me to see progress."),
+                Line::from("Close the terminal; reopen remover to see progress."),
                 Line::from(""),
                 Line::styled(clean(&app.notice), fg(MUTED)),
             ])
@@ -162,7 +162,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(vec![
             Line::from(vec![
                 Span::styled(" ◈ ", bold(MINT)),
-                Span::styled("forgive-me", bold(TEXT)),
+                Span::styled("remover", bold(TEXT)),
                 Span::styled("  /  X", fg(MUTED)),
             ]),
             Line::styled(format!(" {identity}"), fg(MUTED)),
@@ -1174,7 +1174,7 @@ pub fn render_worker(
         Paragraph::new(vec![
             Line::styled(
                 format!(
-                    "◆ forgive-me   @{}   {}",
+                    "◆ remover   @{}   {}",
                     clean(&state.handle),
                     clean(&state.state)
                 ),

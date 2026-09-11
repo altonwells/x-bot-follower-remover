@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "forgive-me",
-  "description": "Browser workloads for the forgive-me terminal follower cleaner. All account actions are controlled from your local TUI.",
-  "version": "0.2.0",
+  "name": "Remover",
+  "description": "Connect remover to X. Manage inactive followers from your terminal, with progress saved on your computer.",
+  "version": "0.3.0",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -21,9 +21,22 @@
   },
   "options_page": "options.html",
   "action": {
-    "default_title": "forgive-me \u00b7 connection settings"
+    "default_title": "Remover \u00b7 Connect Chrome",
+    "default_icon": {
+      "16": "icons/r-16.png",
+      "32": "icons/r-32.png",
+      "48": "icons/r-48.png",
+      "128": "icons/r-128.png"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://x.com https://abs.twimg.com ws://127.0.0.1:*"
+  },
+  "homepage_url": "https://github.com/altonwells/x-bot-follower-remover",
+  "icons": {
+    "16": "icons/r-16.png",
+    "32": "icons/r-32.png",
+    "48": "icons/r-48.png",
+    "128": "icons/r-128.png"
   }
 }

@@ -1,4 +1,4 @@
-export const NATIVE_HOST = "com.forgive_me.pairing";
+export const NATIVE_HOST = "com.x_bot_follower_remover.pairing";
 export interface PairingSettings {
   port: number;
   token: string;
@@ -21,7 +21,7 @@ export async function nativeSettings(
 ): Promise<PairingSettings> {
   const value = await send(NATIVE_HOST, { type: "pair", v: 1 });
   if (!value || typeof value !== "object")
-    throw Error("Start forgive-me in your terminal, then retry.");
+    throw Error("Start remover in your terminal, then retry.");
   const response = value as Record<string, unknown>;
   if (response.ok !== true)
     throw Error(
@@ -35,7 +35,7 @@ export async function nativeSettings(
     !validSettings(response)
   )
     throw Error(
-      "Invalid automatic pairing response. Update forgive-me and reload the extension.",
+      "Invalid automatic pairing response. Update remover and reload the extension.",
     );
   return { port: response.port, token: response.token };
 }

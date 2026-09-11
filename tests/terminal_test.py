@@ -14,7 +14,7 @@ import time
 import unittest
 from pathlib import Path
 
-BINARY = str(Path(sys.argv.pop(1) if len(sys.argv) > 1 else "target/debug/forgive-me").resolve())
+BINARY = str(Path(sys.argv.pop(1) if len(sys.argv) > 1 else "target/debug/remover").resolve())
 
 class Fullscreen(unittest.TestCase):
     def test_fullscreen_lifecycle_and_resize(self):

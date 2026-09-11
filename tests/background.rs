@@ -1,12 +1,12 @@
-use forgive_me::{
+use std::{collections::VecDeque, path::Path, time::Duration};
+use tokio::sync::mpsc;
+use x_bot_follower_remover::{
     app::{App, Batch},
     background::{self, Control},
     bridge::BridgeEvent,
     protocol::{ClientMessage, WorkResult},
     store::Store,
 };
-use std::{collections::VecDeque, path::Path, time::Duration};
-use tokio::sync::mpsc;
 
 #[tokio::test]
 async fn worker_survives_monitor_disconnect_and_preserves_manual_pause_on_reconnect() {
@@ -19,8 +19,8 @@ async fn worker_survives_monitor_disconnect_and_preserves_manual_pause_on_reconn
         policy: Default::default(),
     };
     store.set("batch:1", &Some(batch)).unwrap();
-    let pace = forgive_me::pacing::Pacing {
-        until_ms: forgive_me::model::now_ms() + 3_600_000,
+    let pace = x_bot_follower_remover::pacing::Pacing {
+        until_ms: x_bot_follower_remover::model::now_ms() + 3_600_000,
         ..Default::default()
     };
     store.set("pacing:1", &pace).unwrap();
@@ -175,15 +175,18 @@ async fn full_auto_worker_resumes_collection_without_an_existing_removal_batch()
     let store = Store::open(Path::new(":memory:")).unwrap();
     store.set("last_owner", &"1").unwrap();
     store
-        .set("auto:1", &Some(forgive_me::model::Policy::default()))
+        .set(
+            "auto:1",
+            &Some(x_bot_follower_remover::model::Policy::default()),
+        )
         .unwrap();
     store
         .set(
             "scan:1",
-            &forgive_me::app::Scan {
+            &x_bot_follower_remover::app::Scan {
                 adapter_revision: 2,
                 phase: "following".into(),
-                started_at: forgive_me::model::now_ms(),
+                started_at: x_bot_follower_remover::model::now_ms(),
                 ..Default::default()
             },
         )
@@ -254,22 +257,22 @@ async fn simple_worker_preserves_pause_after_process_restart_and_accepts_only_pa
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("cleanup.sqlite");
     let store = Store::open(&db).unwrap();
-    let policy = forgive_me::model::Policy::cleanup();
+    let policy = x_bot_follower_remover::model::Policy::cleanup();
     store.set("last_owner", &"1").unwrap();
     store.set("auto:1", &Some(policy.clone())).unwrap();
     store.set("managed:1", &true).unwrap();
     store
         .set(
             "scan:1",
-            &forgive_me::app::Scan {
+            &x_bot_follower_remover::app::Scan {
                 phase: "following".into(),
                 adapter_revision: 2,
                 ..Default::default()
             },
         )
         .unwrap();
-    let pace = forgive_me::pacing::Pacing {
-        until_ms: forgive_me::model::now_ms() + 3600000,
+    let pace = x_bot_follower_remover::pacing::Pacing {
+        until_ms: x_bot_follower_remover::model::now_ms() + 3600000,
         ..Default::default()
     };
     store.set("pacing:1", &pace).unwrap();
