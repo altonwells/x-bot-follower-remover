@@ -30,6 +30,7 @@ pub enum BridgeEvent {
         session_id: String,
         sender: mpsc::Sender<Value>,
     },
+    ExtensionVersion(String),
     Disconnected(String),
     Message(ClientMessage),
 }
@@ -96,6 +97,7 @@ async fn connection(
         v,
         token,
         extension_id,
+        extension_version,
     } = hello
     else {
         bail!("Pairing required");
@@ -131,6 +133,13 @@ async fn connection(
             sender,
         })
         .await?;
+    if let Some(version) = extension_version {
+        events
+            .send(BridgeEvent::ExtensionVersion(
+                crate::model::clean(&version).chars().take(24).collect(),
+            ))
+            .await?;
+    }
     let mut tick = tokio::time::interval(Duration::from_secs(10));
     let mut alive = Instant::now();
     loop {

@@ -204,3 +204,43 @@ test("pause then resume cannot revive preflight already in progress", async () =
   assert.equal((result as any).status, "skipped");
   assert.equal(s.writes(), 0);
 });
+
+test("pre-dispatch rate limit retains a deferred receipt until acknowledged", async () => {
+  const s = setup();
+  const retryAt = Date.now() + 120_000;
+  s.client.remove = async () => {
+    throw Object.assign(new Error("budget exhausted"), {
+      code: "rate_limited",
+      retryAt,
+    });
+  };
+  const result = await s.runner.execute(work());
+  assert.deepEqual(result, {
+    kind: "deferred",
+    target_id: "2",
+    code: "rate_limited",
+    message: "budget exhausted",
+    retry_at_ms: retryAt,
+  });
+  assert.equal(s.writes(), 0);
+  const restart = new Runner(s.client, s.journal);
+  assert.deepEqual((await restart.recovery())?.result, result);
+  await restart.ack(work().command_id);
+  assert.equal(s.journal.receipt, null);
+});
+
+test("a rate-limit error after dispatch remains uncertain and cannot be retried", async () => {
+  const s = setup();
+  s.client.remove = async (_o, _i, _p, _g, before) => {
+    await before();
+    throw Object.assign(new Error("429"), {
+      code: "rate_limited",
+      retryAt: Date.now() + 60000,
+    });
+  };
+  const result = await s.runner.execute(work());
+  assert.equal(result.kind, "action");
+  assert.equal((result as any).status, "uncertain");
+  await s.runner.ack(work().command_id);
+  assert(s.journal.receipt);
+});

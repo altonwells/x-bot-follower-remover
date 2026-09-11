@@ -46,6 +46,7 @@ pub struct App {
     pub store: Storage,
     pub owner: String,
     pub handle: String,
+    pub browser_version: String,
     pub accounts: BTreeMap<String, Account>,
     pub policy: Policy,
     pub selected: BTreeSet<String>,
@@ -69,6 +70,8 @@ pub struct App {
     pub uncertain: usize,
     pub demo: bool,
     pub only_matching: bool,
+    pub pacing: crate::pacing::Pacing,
+    pub detach_requested: bool,
 }
 impl App {
     pub fn new(store: Store, demo: bool) -> Result<Self> {
@@ -81,12 +84,14 @@ impl App {
         let policy = store.get("policy")?.unwrap_or_default();
         let scan = store.get(&format!("scan:{owner}"))?.unwrap_or_default();
         let batch = store.get(&format!("batch:{owner}"))?.flatten();
+        let pacing = store.get(&format!("pacing:{owner}"))?.unwrap_or_default();
         let (removed, uncertain) = store.action_counts(&owner)?;
         Ok(Self {
             setup: None,
             store: Storage::new(store),
             owner,
             handle: String::new(),
+            browser_version: String::new(),
             accounts,
             policy,
             selected: BTreeSet::new(),
@@ -110,6 +115,8 @@ impl App {
             uncertain,
             demo,
             only_matching: false,
+            pacing,
+            detach_requested: false,
         })
     }
     pub fn configure_setup(&mut self, config: &crate::config::Config) {
@@ -180,7 +187,14 @@ impl App {
             owner_id: self.owner.clone(),
             command,
         };
-        if matches!(work.command, Command::RemoveFollower { .. }) {
+        if let Command::RemoveFollower { policy, .. } = &work.command {
+            let allowed = self.pacing.reserve(policy.batch_limit);
+            let pacing = self.pacing.clone();
+            let key = format!("pacing:{}", self.owner);
+            self.store.run(move |s| s.set(&key, &pacing)).await?;
+            if !allowed {
+                return Ok(());
+            }
             let w = work.clone();
             self.store.run(move |s| s.start_action(&w)).await?;
         }
@@ -191,6 +205,7 @@ impl App {
         Ok(())
     }
     pub async fn pause(&mut self) -> Result<()> {
+        self.detach_requested = false;
         self.paused = true;
         self.send_control("pause").await?;
         self.save_batch().await?;
@@ -232,7 +247,7 @@ impl App {
         }
         self.send_control("resume").await?;
         self.paused = false;
-        self.log("Scanning. p pauses; results are saved after every page.");
+        self.log("Collecting following, then followers. Activity is a separate step (i). Progress is saved after each page.");
         Ok(())
     }
     pub async fn key(&mut self, key: KeyEvent) -> Result<()> {
@@ -306,7 +321,7 @@ impl App {
                             self.save_batch().await?;
                             self.send_control("resume").await?;
                             self.paused = false;
-                            self.log("Removal batch approved. p pauses; c cancels remaining work.");
+                            self.log("Removal queue approved. p pauses; b runs in background; c cancels remaining work.");
                         }
                         self.mode = Mode::Browse;
                     }
@@ -399,6 +414,35 @@ impl App {
                 self.focus = 0;
             }
             KeyCode::Char('s') => self.start_scan().await?,
+            KeyCode::Char('i') => {
+                if self.batch.is_some()
+                    || self.pending.is_some()
+                    || !matches!(self.scan.phase.as_str(), "review" | "inspect" | "done")
+                {
+                    bail!("Finish collecting followers first (s), then press i to check activity");
+                }
+                self.scan.phase = "inspect".into();
+                self.scan.started_at = now_ms();
+                self.save_scan().await?;
+                self.send_control("resume").await?;
+                self.paused = false;
+                self.log("Checking activity. Protected accounts are skipped; unknown evidence never qualifies for removal.");
+            }
+            KeyCode::Char('b') => {
+                if self.demo {
+                    bail!("Background work is unavailable in demo mode");
+                }
+                if self.batch.is_none() || self.paused {
+                    bail!("Approve and start a removal queue first (d then y)");
+                }
+                if !self.capabilities.iter().any(|c| c == "durable_queue:1") {
+                    bail!("Reload the updated Chrome extension before running in the background");
+                }
+                self.detach_requested = true;
+                self.log(
+                    "Moving approved queue to the background after the current task finishes…",
+                );
+            }
             KeyCode::Char(' ') => {
                 if let Some(id) = self.focused() {
                     if self.accounts[&id].reason(&self.policy, now_ms()).is_ok() {
@@ -406,7 +450,7 @@ impl App {
                             self.selected.insert(id);
                         }
                     } else {
-                        self.log("This account does not meet the current policy.");
+                        self.log("Protected from removal: inspect the decision column or press Enter for the reason.");
                     }
                 }
             }
@@ -447,7 +491,6 @@ impl App {
                             .get(*id)
                             .is_some_and(|a| a.reason(&self.policy, now_ms()).is_ok())
                     })
-                    .take(self.policy.batch_limit)
                     .cloned()
                     .collect();
                 if self.confirmation.is_empty() {
@@ -574,7 +617,7 @@ impl App {
         }
         Ok(())
     }
-    async fn check_session(&mut self) -> Result<()> {
+    pub(crate) async fn check_session(&mut self) -> Result<()> {
         if self
             .setup
             .as_ref()
@@ -618,6 +661,7 @@ impl App {
             || self.pending.is_some()
             || self.sender.is_none()
             || Instant::now() < self.next_at
+            || now_ms() < self.pacing.until_ms
             || self.uncertain > 0
         {
             return Ok(());
@@ -643,7 +687,7 @@ impl App {
                 if self
                     .accounts
                     .get(id)
-                    .is_some_and(|a| a.reason(&batch.policy, now_ms()).is_ok())
+                    .is_some_and(|a| !a.kept && a.follows_me != Some(false))
                 {
                     break;
                 }
@@ -692,7 +736,7 @@ impl App {
                     self.scan.phase = "done".into();
                     self.paused = true;
                     self.save_scan().await?;
-                    self.log("Scan finished. Review matching accounts, then a selects them and d reviews removal.");
+                    self.log("Activity checked. f sets removal rules; m shows candidates; a selects candidates; d reviews the removal queue.");
                 }
             }
             _ => self.paused = true,
@@ -701,6 +745,9 @@ impl App {
     }
     pub async fn bridge_event(&mut self, event: BridgeEvent) -> Result<()> {
         match event {
+            BridgeEvent::ExtensionVersion(version) => {
+                self.browser_version = version;
+            }
             BridgeEvent::Connected { session_id, sender } => {
                 if self.mode == Mode::Setup {
                     self.setup.as_mut().unwrap().go(Step::Connect);
@@ -785,7 +832,7 @@ impl App {
                     if stored.owner_id != work.owner_id {
                         bail!("Recovery owner mismatch");
                     }
-                    self.apply_action(&stored, &result).await?;
+                    self.apply_result(&stored, result).await?;
                     self.ack(&work.command_id).await?;
                     self.log("Recovered browser receipt. Press r for any uncertain action; p resumes a saved queue.");
                 } else {
@@ -848,6 +895,7 @@ impl App {
             .await?;
         if w.owner_id == self.owner {
             if status == "verified_removed" || status == "already_absent" {
+                self.pacing.failures = 0;
                 if let Some(a) = self.accounts.get_mut(&target) {
                     a.follows_me = Some(false);
                     let (owner, record) = (self.owner.clone(), a.clone());
@@ -862,6 +910,7 @@ impl App {
             }
             self.save_batch().await?;
             if status == "uncertain" || status == "failed" {
+                self.detach_requested = false;
                 self.paused = true;
             }
             self.refresh_counts().await?;
@@ -898,7 +947,7 @@ impl App {
                 self.selected.clear();
                 self.focus = 0;
                 let owner = self.owner.clone();
-                let (records, scan, batch) = self
+                let (records, scan, batch, pacing) = self
                     .store
                     .run(move |s| {
                         s.set("last_owner", &owner)?;
@@ -906,12 +955,14 @@ impl App {
                             s.accounts(&owner)?,
                             s.get(&format!("scan:{owner}"))?.unwrap_or_default(),
                             s.get(&format!("batch:{owner}"))?.flatten(),
+                            s.get(&format!("pacing:{owner}"))?.unwrap_or_default(),
                         ))
                     })
                     .await?;
                 self.accounts = records.into_iter().map(|a| (a.id.clone(), a)).collect();
                 self.scan = scan;
                 self.batch = batch;
+                self.pacing = pacing;
                 self.refresh_counts().await?;
                 if self.mode == Mode::Setup {
                     self.setup.as_mut().unwrap().go(Step::Ready);
@@ -973,7 +1024,9 @@ impl App {
                         self.scan.following_complete = true;
                         self.scan.phase = "followers".into();
                     } else {
-                        self.scan.phase = "inspect".into();
+                        self.scan.phase = "review".into();
+                        self.paused = true;
+                        self.log("Followers collected. f sets removal rules; i checks activity. Nothing is selected or removed yet.");
                     }
                 } else if self.scan.cursor.is_none() {
                     self.paused = true;
@@ -998,6 +1051,35 @@ impl App {
                     .await?;
                 self.accounts.insert(account.id.clone(), account);
             }
+            WorkResult::Deferred {
+                target_id,
+                code,
+                message,
+                retry_at_ms,
+            } => {
+                let Command::RemoveFollower {
+                    target_id: expected,
+                    ..
+                } = &w.command
+                else {
+                    bail!("Deferred response for non-removal");
+                };
+                if expected != &target_id || w.owner_id != self.owner {
+                    bail!("Deferred target mismatch");
+                }
+                let id = w.command_id.clone();
+                self.store
+                    .run(move |s| {
+                        s.finish_action(&id, "deferred", "No write sent; retry after cooldown")
+                    })
+                    .await?;
+                self.pacing.retry(Some(retry_at_ms), &code);
+                self.refresh_counts().await?;
+                self.log(format!(
+                    "Waiting {}s: {message}. No removal was sent; this target stays queued.",
+                    self.pacing.remaining_seconds()
+                ));
+            }
             action @ WorkResult::Action { .. } => self.apply_action(w, &action).await?,
             WorkResult::Opened => {}
             WorkResult::Error {
@@ -1016,7 +1098,20 @@ impl App {
                     )
                     .await?;
                 }
-                self.paused = true;
+                let retry_read =
+                    !matches!(
+                        w.command,
+                        Command::RemoveFollower { .. }
+                            | Command::GetSession
+                            | Command::Reconcile { .. }
+                    ) && matches!(code.as_str(), "rate_limited" | "network_unavailable");
+                if matches!(code.as_str(), "rate_limited" | "network_unavailable") {
+                    self.pacing.retry(retry_at_ms, &code);
+                }
+                if !retry_read {
+                    self.paused = true;
+                    self.detach_requested = false;
+                }
                 if matches!(w.command, Command::GetSession)
                     && let Some(setup) = self.setup.as_mut()
                 {
@@ -1029,7 +1124,12 @@ impl App {
                     _ => "browser task".into(),
                 };
                 self.log(format!(
-                    "Paused during {task}: {code}: {}",
+                    "{} during {task}: {code}: {}",
+                    if retry_read {
+                        "Waiting; retries automatically"
+                    } else {
+                        "Paused"
+                    },
                     message.trim_end_matches('.')
                 ));
                 if let Some(retry) = retry_at_ms {
@@ -1039,10 +1139,19 @@ impl App {
             }
         }
         let seconds = if matches!(w.command, Command::RemoveFollower { .. }) {
-            self.policy.delay_seconds
+            self.batch
+                .as_ref()
+                .map_or(self.policy.delay_seconds, |b| b.policy.delay_seconds)
         } else {
             2
         };
+        self.pacing.until_ms = self
+            .pacing
+            .until_ms
+            .max(now_ms() + i64::from(seconds) * 1000);
+        let pacing = self.pacing.clone();
+        let key = format!("pacing:{}", w.owner_id);
+        self.store.run(move |s| s.set(&key, &pacing)).await?;
         self.next_at = self
             .next_at
             .max(Instant::now() + Duration::from_secs(seconds.into()));

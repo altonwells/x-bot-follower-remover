@@ -73,6 +73,13 @@ export type Result =
         | "uncertain";
       message: string;
     }
+  | {
+      kind: "deferred";
+      target_id: string;
+      code: string;
+      message: string;
+      retry_at_ms: number;
+    }
   | { kind: "opened" }
   | {
       kind: "error";

@@ -10,11 +10,12 @@ You set the rules. You approve each removal batch.
 
 ## How
 
-The app separates the work into three steps:
+The app separates the work into four steps:
 
-1. **Collect.** The Chrome extension reads your followers, the accounts you follow, and visible post activity.
-2. **Review.** The terminal shows which accounts meet your rules and the reason for each result.
-3. **Remove.** You approve a batch. The extension removes those followers, one account at a time.
+1. **Collect.** The Chrome extension reads your followers and the accounts you follow.
+2. **Check activity.** You start the activity check. Missing evidence stays unknown.
+3. **Review.** The terminal marks removal candidates and explains which accounts are protected.
+4. **Remove.** You approve the queue. The extension checks each target again and removes one follower at a time. The controller can run in the background.
 
 X login data stays in Chrome. The app stores account data and progress on your computer.
 If required data is unknown, the default rules exclude the account.
@@ -100,19 +101,16 @@ Manual pairing remains available under **Manual connection and repair**.
 
 ## Remove unwanted followers
 
-Keep Chrome and the terminal open during work.
+Keep Chrome open and your Mac awake during work.
 
-1. Press `s` to start the scan.
-2. Wait for the scan to finish.
-3. Press `f` to examine the removal rules.
-4. Press Enter to save the rules.
-5. Press `m` to show accounts that meet the rules.
-6. Press Enter on an account to examine its data.
-7. Press Esc to return to the list.
-8. Press `K` on each account you want to keep.
-9. Press `a` to select the matches in the current view.
-10. Press `d` to review the removal batch.
-11. Press `y` only if you approve the removals.
+1. Press `s` to collect the accounts you follow and your followers. Collection stops before activity checks.
+2. Press `f` to choose removal rules, then Enter to save. **REMOVE** rules identify candidates. **PROTECT** rules exclude accounts from removal.
+3. Press `i` to check activity. Unknown evidence stays protected.
+4. Press `m` to switch between all followers and removal candidates. This changes only the view.
+5. Press Enter for evidence, or `K` to keep an account.
+6. Press `a` to select candidates in the current view, or Space to select one.
+7. Press `d` to review the full queue, then `y` to approve removal.
+8. Press `b` to move the approved queue to the background. The current task finishes before handoff.
 
 **Enter, `n`, or Esc cancels the removal confirmation.**
 
@@ -130,24 +128,41 @@ An account must meet all these conditions:
 Post activity includes posts, replies, and reposts. Inactivity does not prove that an account is a bot.
 Zero current posts does not mean the account never posted.
 
-The default batch limit is 50 accounts.
-After a removal finishes, the app waits at least 10 seconds before it sends the next removal request.
-Press `f` to change these settings.
+New installations use a minimum interval of 60 seconds and an hourly budget of 50 removal attempts. Existing saved settings are preserved. The full selected queue is approved at once; the hourly budget limits execution, not selection. Pre-check attempts count toward that local budget too.
+
+X reset times and Retry-After headers can extend the wait. Cooldowns and attempt budgets survive process restarts. A transient read or rate limit before dispatch keeps the target queued. Authentication failures and uncertain writes stop work. The app does not promise a fixed completion time or immunity from X restrictions.
+
+### Background work
+
+After approval, press `b`. You can close the terminal after the handoff message. Run `forgive-me` again to open the background queue monitor. Closing that monitor leaves the queue running.
+
+```sh
+forgive-me status   # Current progress and wait time
+forgive-me pause    # Pause the background queue
+forgive-me resume   # Resume the same approved account and queue
+forgive-me stop     # Stop the worker; preserve the remaining queue
+```
+
+The monitor also has pause, resume, cancel, and stop controls. To return to the full follower view, stop the worker and reopen forgive-me. Resolve uncertain actions with `r` before resuming. After a process crash or computer restart, open forgive-me and review/resume saved work; automatic launch at login is not configured.
+
+Chrome must stay open and signed in to the approved account. The Mac must stay awake. No work runs while the computer is asleep. A normal Chrome reconnect can resume the same approved background queue; a manual pause, account change, or uncertain result prevents automatic continuation.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
 | ↑ / ↓, `j` / `k`, mouse wheel | Move through the list or scroll help and details |
-| `s` | Start or continue a scan |
+| `s` | Collect or continue collecting followers |
+| `i` | Check activity after collection |
 | `/` | Search collected followers |
-| `m` | Switch between all followers and matches |
+| `m` | Switch between all followers and removal candidates |
 | Enter | Open account details |
 | Space | Select or deselect one eligible account |
-| `a` | Select matches in the current view |
+| `a` | Select removal candidates in the current view |
 | `K` | Add or remove a keep exception |
 | `f` | Change the removal rules |
-| `d` | Review a removal batch |
+| `d` | Review the full removal queue |
+| `b` | Move an approved queue to the background |
 | `p` | Pause or continue work |
 | `c` | Cancel the remaining removals |
 | `r` | Resolve one uncertain result without another removal request |
@@ -191,8 +206,8 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.7 passed automated, terminal, and installer tests.
-The updated X integration still needs a new scan on a real account.
+Version 0.1.8 passed automated, terminal, and installer tests.
+The user confirmed the preceding X connection fix after loading the updated extension. The new background workflow has automated coverage; it has not run a live overnight removal test.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).
 

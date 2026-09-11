@@ -42,7 +42,7 @@ The extension confirms the owner and removal rules again before each `RemoveFoll
 A recent post action excludes an account from inactivity matches.
 Missing or ambiguous activity data stays unknown.
 
-The controller permits one work request at a time.
+The controller permits one work request at a time. The same App controller can run without a terminal after an explicit queue handoff. A private Unix socket serves status and fixed pause/resume/cancel/stop commands. Reopening the CLI monitors that worker instead of creating a second X connection.
 It records each removal attempt before dispatch.
 The extension also records request and result receipts.
 The controller acknowledges results only after it stores them.
@@ -113,4 +113,4 @@ swift scripts/render-preview.swift /tmp/forgive-me-preview.json /tmp/forgive-me-
 ## Current scope
 
 The app removes followers. It uses the accounts you follow to protect those relationships.
-It does not include unfollow, hard-block, scheduled cleanup, continuous account monitoring, or a multiple-account interface.
+It does not include unfollow, hard-block, automatic launch at login, continuous account monitoring, or a multiple-account interface.

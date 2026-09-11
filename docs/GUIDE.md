@@ -36,7 +36,7 @@ A new page can trigger one retry after a recoverable failure.
 Rate limits require waiting. Reconnecting is not a way to resolve an X access denial.
 
 The guide stays paused. Removal controls are not active there.
-A connection or reconnection does not automatically continue work.
+In the foreground, a reconnection does not automatically continue work. An approved detached queue can continue after a normal Chrome reconnect only for the same owner. A manual pause, account change, or uncertain removal prevents automatic continuation.
 
 ## If a scan stops
 
@@ -122,7 +122,7 @@ export PATH="$HOME/.local/bin:$PATH"
 To install a specific release:
 
 ```sh
-gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.7
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.8
 ```
 
 To install a local package from the repository folder:

@@ -1,10 +1,12 @@
-forgive-me v0.1.7 repairs missing X request-signing data.
+forgive-me v0.1.8 makes follower cleanup a clear four-step workflow and adds background queues.
 
-- If X has removed its loading SVGs from the live page, read the original home HTML inside Chrome. Read the verification key and animation frames from the same response.
-- Discover bare relative signing script names, including sign.o and ondemand.s assets. Accept JavaScript variable names that contain a dollar sign.
-- Report the missing signing ingredient and asset counts instead of a generic signing error. Preserve rate-limit cooldowns and stop before API dispatch if signing is unavailable.
-- Keep existing pairing, account confirmation, and removal approval behavior.
+- s collects followers; i checks activity; f defines removal candidates and protections; a selects candidates and d reviews the full queue.
+- The view and evidence panels state REMOVE or KEEP. Unknown evidence remains protected.
+- The full approved selection stays queued. A local hourly attempt budget controls execution rather than truncating the selection.
+- Endpoint cooldowns honor X reset and Retry-After headers, persist across Chrome worker restarts, and back off after repeated rate limits. Read failures and pre-dispatch deferrals preserve work; uncertain writes stop and never replay automatically.
+- b hands the approved queue to a detached controller after the active task finishes. Reopen forgive-me for a monitor, or use status, pause, resume, and stop commands.
+- Setup reports the Chrome extension version independently of the terminal version.
 
-Installed users: quit and reopen forgive-me, Reload the extension in chrome://extensions, then refresh the signed-in X tab. Press Enter to retry the account check if needed.
+Quit and reopen the terminal app, Reload the installed extension in chrome://extensions, and refresh X. Existing settings, pairing, keep list, and action receipts are preserved. Chrome must remain open and the Mac awake for background execution. Automatic launch after a reboot is not configured.
 
-Verified signing generation against current public X HTML and JavaScript assets. Regression tests exercise the serialized Chrome collector and account identification with synthetic API responses. Authenticated X acceptance remains unverified; no live account was scanned or modified.
+The background behavior is tested with local simulated Chrome connections. No live followers were removed and no overnight live run is claimed.

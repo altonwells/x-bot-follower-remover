@@ -155,21 +155,41 @@ export class Runner {
             );
           } catch (e) {
             const message = safeMessage(e);
-            result = {
-              kind: "action",
-              target_id: c.target_id,
-              status:
-                record.state === "dispatched"
-                  ? "uncertain"
-                  : message.includes("stopped before write") ||
-                      message.includes("deadline expired")
-                    ? "skipped"
-                    : "failed",
-              message:
-                record.state === "dispatched"
-                  ? "Dispatch outcome uncertain; reconcile before continuing."
-                  : message,
-            };
+            const error = e as { code?: string; retryAt?: number };
+            if (
+              record.state !== "dispatched" &&
+              ["rate_limited", "network_unavailable"].includes(
+                error?.code ?? "",
+              )
+            ) {
+              result = {
+                kind: "deferred",
+                target_id: c.target_id,
+                code: error.code!,
+                message,
+                retry_at_ms: Math.max(
+                  Date.now() + 1000,
+                  Number.isFinite(error.retryAt)
+                    ? error.retryAt!
+                    : Date.now() + 60_000,
+                ),
+              };
+            } else
+              result = {
+                kind: "action",
+                target_id: c.target_id,
+                status:
+                  record.state === "dispatched"
+                    ? "uncertain"
+                    : message.includes("stopped before write") ||
+                        message.includes("deadline expired")
+                      ? "skipped"
+                      : "failed",
+                message:
+                  record.state === "dispatched"
+                    ? "Dispatch outcome uncertain; reconcile before continuing."
+                    : message,
+              };
           }
           await this.journal.set({ work, state: "finished", result });
           return result;

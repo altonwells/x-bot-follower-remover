@@ -56,6 +56,13 @@ enum CliCommand {
         reset: bool,
     },
     Doctor,
+    /// Show or control the detached removal queue.
+    Status,
+    Pause,
+    Resume,
+    Stop,
+    #[command(hide = true)]
+    Worker,
     #[command(hide = true)]
     NativeHost {
         origin: String,
@@ -98,7 +105,7 @@ async fn main() -> Result<()> {
         let worker = tokio::spawn(demo_worker(rx, events_tx, records));
         let result = run(app, events_rx, args.no_animation).await;
         worker.abort();
-        return result;
+        return result.map(|_| ());
     }
     let dir = config::data_dir(args.data_dir)?;
     let lock = std::fs::OpenOptions::new()
@@ -107,8 +114,33 @@ async fn main() -> Result<()> {
         .read(true)
         .write(true)
         .open(dir.join("app.lock"))?;
-    lock.try_lock_exclusive()
-        .context("forgive-me is already running for this data directory")?;
+    let control = match args.command {
+        Some(CliCommand::Status) => Some(forgive_me::background::Control::Status),
+        Some(CliCommand::Pause) => Some(forgive_me::background::Control::Pause),
+        Some(CliCommand::Resume) => Some(forgive_me::background::Control::Resume),
+        Some(CliCommand::Stop) => Some(forgive_me::background::Control::Stop),
+        _ => None,
+    };
+    if let Some(control) = control {
+        let status = forgive_me::background::request(&dir, control).await?;
+        println!(
+            "@{} · {} · {} queued · {} removed · {} uncertain · next in {}s\n{}",
+            status.handle,
+            status.state,
+            status.remaining,
+            status.removed,
+            status.uncertain,
+            status.wait_seconds,
+            status.message
+        );
+        return Ok(());
+    }
+    if lock.try_lock_exclusive().is_err() {
+        if args.command.is_none() && dir.join("worker.sock").exists() {
+            return monitor(&dir).await;
+        }
+        anyhow::bail!("forgive-me is already running for this data directory");
+    }
     let mut config = config::load(&dir)?;
     if let Some(port) = args.port {
         config.port = port;
@@ -143,29 +175,55 @@ async fn main() -> Result<()> {
             );
             return Ok(());
         }
-        None => {}
-        Some(CliCommand::NativeHost { .. } | CliCommand::UnregisterHost) => unreachable!(),
+        None | Some(CliCommand::Worker) => {}
+        Some(
+            CliCommand::NativeHost { .. }
+            | CliCommand::UnregisterHost
+            | CliCommand::Status
+            | CliCommand::Pause
+            | CliCommand::Resume
+            | CliCommand::Stop,
+        ) => unreachable!(),
     }
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, config.port))
         .await
         .context("Local bridge port unavailable; use --port to choose another")?;
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
-    app.configure_setup(&config);
-    if let Err(error) = forgive_me::native::register(&dir, &forgive_me::setup::extension_dir()) {
+    let background = matches!(args.command, Some(CliCommand::Worker));
+    if !background {
+        app.configure_setup(&config);
+    }
+    if !background
+        && let Err(error) = forgive_me::native::register(&dir, &forgive_me::setup::extension_dir())
+    {
         app.log(format!(
             "Automatic pairing unavailable: {error}. Manual pairing remains available."
         ));
     }
-    let bridge = tokio::spawn(bridge::serve(listener, config, dir, events_tx));
-    let result = run(app, events_rx, args.no_animation).await;
+    let bridge = tokio::spawn(bridge::serve(listener, config, dir.clone(), events_tx));
+    let result = if background {
+        forgive_me::background::run(app, events_rx, &dir)
+            .await
+            .map(|_| false)
+    } else {
+        run(app, events_rx, args.no_animation).await
+    };
     bridge.abort();
-    result
+    let _ = bridge.await;
+    drop(lock);
+    if result? {
+        forgive_me::background::spawn(&dir)?;
+        println!(
+            "Approved queue moved to background. Keep Chrome open and your Mac awake.\nRun forgive-me to monitor; forgive-me pause or forgive-me stop to stop work."
+        );
+    }
+    Ok(())
 }
 async fn run(
     mut app: App,
     mut bridge: mpsc::Receiver<BridgeEvent>,
     no_animation: bool,
-) -> Result<()> {
+) -> Result<bool> {
     anyhow::ensure!(
         std::io::stdin().is_terminal() && stdout().is_terminal(),
         "Open forgive-me in an interactive terminal (no pipes or output redirection)."
@@ -195,6 +253,9 @@ async fn run(
     terminal.draw(|f| ui::render(f, &mut app, 0))?;
     let mut refresh = tokio::time::Instant::now();
     while !app.quit {
+        if app.detach_requested && app.pending.is_none() {
+            return Ok(true);
+        }
         let mut redraw = true;
         let result = tokio::select! {
          event = keys.next() => match event {
@@ -208,7 +269,7 @@ async fn run(
          },
          event=bridge.recv()=>match event{Some(event)=>app.bridge_event(event).await,None=>{app.quit=true;Ok(())}},
          _=clock.tick()=>{
-            if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at) { redraw = false; }
+            if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at || app.pacing.until_ms > now_ms()) { redraw = false; }
             app.tick().await
          },
         };
@@ -217,7 +278,7 @@ async fn run(
             app.paused = true;
             app.log(format!("{e:#}"));
         }
-        if redraw || refresh.elapsed() >= Duration::from_secs(30) {
+        if redraw || refresh.elapsed() >= Duration::from_secs(1) {
             terminal.draw(|f| {
                 ui::render(
                     f,
@@ -232,7 +293,7 @@ async fn run(
             refresh = tokio::time::Instant::now();
         }
     }
-    Ok(())
+    Ok(false)
 }
 // Mouse actions only navigate. They can never select or approve a removal.
 fn navigation_key(event: Event) -> Option<KeyEvent> {
@@ -366,4 +427,79 @@ async fn demo_worker(
             break;
         }
     }
+}
+
+async fn monitor(dir: &Path) -> Result<()> {
+    use forgive_me::background::{Control, request};
+    use forgive_me::theme::*;
+    use ratatui::{
+        text::{Line, Span},
+        widgets::{Block, Borders, Paragraph, Wrap},
+    };
+    anyhow::ensure!(
+        std::io::stdin().is_terminal() && stdout().is_terminal(),
+        "Use forgive-me status for noninteractive output"
+    );
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            ratatui::restore();
+        }
+    }
+    let _restore = Restore;
+    let mut terminal = ratatui::try_init()?;
+    let mut keys = EventStream::new();
+    let mut timer = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        let state = request(dir, Control::Status).await?;
+        terminal.draw(|frame| {
+            let area = frame.area();
+            let lines = vec![
+                Line::styled(" ◈ forgive-me / BACKGROUND QUEUE", bold(MINT)),
+                Line::from(format!(" @{}  ·  {}", state.handle, state.state)),
+                Line::from(""),
+                Line::from(format!(
+                    " {} remaining  ·  {} verified removals  ·  {} uncertain",
+                    state.remaining, state.removed, state.uncertain
+                )),
+                Line::from(format!(" Next task in {} seconds", state.wait_seconds)),
+                Line::from(""),
+                Line::from(state.message.clone()),
+                Line::from(""),
+                Line::styled(
+                    " Chrome must stay open. Your Mac must stay awake.",
+                    fg(MUTED),
+                ),
+                Line::from(" Closing this view leaves the approved queue running."),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(" p ", bold(ICE)),
+                    Span::raw("pause   "),
+                    Span::styled(" r ", bold(ICE)),
+                    Span::raw("resume   "),
+                    Span::styled(" c ", bold(ICE)),
+                    Span::raw("cancel queue"),
+                ]),
+                Line::from(" x stop worker and save queue    q close monitor"),
+            ];
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(Block::default().borders(Borders::ALL))
+                    .style(fg(TEXT).bg(BG))
+                    .wrap(Wrap { trim: false }),
+                area,
+            );
+        })?;
+        tokio::select! {
+            _ = timer.tick() => {},
+            event = keys.next() => if let Some(Ok(Event::Key(key))) = event {
+                if key.kind != KeyEventKind::Press { continue; }
+                let command = match key.code { KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('p') => Some(Control::Pause), KeyCode::Char('r') => Some(Control::Resume),
+                    KeyCode::Char('c') => Some(Control::Cancel), KeyCode::Char('x') => Some(Control::Stop), _ => None };
+                if let Some(command) = command { let stop = matches!(command, Control::Stop); request(dir, command).await?; if stop { break; } }
+            } else if event.is_none() { break; },
+        }
+    }
+    Ok(())
 }

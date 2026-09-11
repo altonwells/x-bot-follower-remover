@@ -150,9 +150,16 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         header,
     );
     let chrome = if connected {
-        "✓ Chrome connected"
+        format!(
+            "✓ Chrome connected / extension {}",
+            if app.browser_version.is_empty() {
+                "version unknown"
+            } else {
+                &app.browser_version
+            }
+        )
     } else {
-        "○ Chrome not connected"
+        "○ Chrome not connected".into()
     };
     let account = if ready {
         format!("✓ @{}", app.handle)

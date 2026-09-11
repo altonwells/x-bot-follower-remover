@@ -30,7 +30,7 @@ impl Default for Policy {
             skip_verified: true,
             skip_following: true,
             include_zero_posts: true,
-            delay_seconds: 10,
+            delay_seconds: 60,
             batch_limit: 50,
         }
     }

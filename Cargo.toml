@@ -1,6 +1,6 @@
 [package]
 name = "forgive-me"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 rust-version = "1.88"
 description = "A local Ratatui control plane for a Chrome-based X follower cleaner"
@@ -20,7 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 subtle = "2"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal", "io-util"] }
 tokio-tungstenite = "0.26.2"
 
 [dev-dependencies]

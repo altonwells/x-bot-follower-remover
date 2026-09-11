@@ -121,6 +121,7 @@ async function connect(
           type: "hello",
           token: chosen.token,
           extension_id: chrome.runtime.id,
+          extension_version: chrome.runtime.getManifest().version,
         }),
       );
   };

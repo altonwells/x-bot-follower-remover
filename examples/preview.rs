@@ -37,7 +37,7 @@ fn main() {
     app.handle = "demo_account".into();
     app.owner = "demo".into();
     app.scan.phase = "done".into();
-    app.notice = "Scan complete. Review matching accounts, then choose a removal batch.".into();
+    app.notice = "Activity checked. a selects removal candidates; d reviews the full queue.".into();
     let now = now_ms();
     for (i, name) in [
         "afterglow",

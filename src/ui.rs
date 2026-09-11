@@ -15,16 +15,18 @@ use ratatui::{
 
 pub const HELP: &[(&str, &str)] = &[
     ("↑ ↓ / j k / PgUp PgDn", "Navigate"),
-    ("s", "Scan or resume scan"),
-    ("f", "Filters and pacing"),
+    ("s", "1. Collect followers (no activity check)"),
+    ("i", "2. Check activity of collected followers"),
+    ("f", "Removal rules: choose candidates and protections"),
     ("/", "Search"),
-    ("m", "Toggle matching-only view"),
+    ("m", "View candidates for removal / all followers"),
     ("Space", "Toggle eligible account"),
-    ("a", "Select matching results"),
+    ("a", "3. Select removal candidates in this view"),
     ("K", "Keep / unkeep"),
     ("Enter", "Account details"),
     ("o", "Open X profile"),
-    ("d", "Review removal batch"),
+    ("d", "4. Review and approve bulk removal"),
+    ("b", "Run approved queue in background"),
     ("p", "Pause / resume"),
     ("c", "Cancel pending removals"),
     ("r", "Reconcile one uncertain action"),
@@ -168,7 +170,7 @@ fn render_metrics(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
             .count();
         [
             ("FOLLOWERS", followers, "collected", TEXT),
-            ("MATCHING", app.matches(), "meet your policy", MINT),
+            ("CANDIDATES", app.matches(), "eligible for removal", MINT),
             ("SELECTED", app.selected.len(), "ready for review", ICE),
             ("REMOVED", app.removed, "verified total", MINT),
             (
@@ -187,7 +189,7 @@ fn render_metrics(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
             let caption = if column.width < 24 {
                 match label {
                     "FOLLOWERS" => "collected",
-                    "MATCHING" => "eligible",
+                    "CANDIDATES" => "to remove",
                     "SELECTED" => "to review",
                     "REMOVED" => "verified",
                     "UNCERTAIN" => "to check",
@@ -218,79 +220,43 @@ fn render_metrics(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
 }
 
 fn render_progress(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
-    let phase = match app.scan.phase.as_str() {
-        "following" => 0,
-        "followers" => 1,
-        "inspect" => 2,
-        "done" => 3,
-        _ => usize::MAX,
-    };
-    if area.width < 74 {
-        let label = match phase {
-            0 => "Following · inventory incomplete",
-            1 => "Followers · inventory incomplete",
-            2 => "Checking activity",
-            3 => "Complete",
-            _ => "Not started · s to scan",
-        };
-        frame.render_widget(
-            Paragraph::new(Line::styled(format!(" SCAN  {label}"), fg(ICE))),
-            area,
-        );
-        return;
-    }
-    let mut stages = vec![Span::styled(" SCAN  ", fg(MUTED))];
-    for (i, label) in ["Following", "Followers", "Activity", "Complete"]
-        .iter()
-        .enumerate()
-    {
-        let color = if phase == i {
-            ICE
-        } else if phase != usize::MAX && phase > i {
-            MINT
-        } else {
-            MUTED
-        };
-        stages.push(Span::styled(
-            format!(
-                "{} {label}",
-                if phase != usize::MAX && phase > i {
-                    "✓"
-                } else if phase == i {
-                    "●"
-                } else {
-                    "○"
-                }
-            ),
-            fg(color),
-        ));
-        if i < 3 {
-            stages.push(Span::styled("  ›  ", fg(BORDER)));
+    let current = if app.batch.is_some() {
+        "4 / REMOVAL QUEUE"
+    } else {
+        match app.scan.phase.as_str() {
+            "following" => "1 / COLLECT: people you follow",
+            "followers" => "1 / COLLECT: your followers",
+            "review" => "2 / READY TO CHECK ACTIVITY: press i",
+            "inspect" => "2 / CHECKING ACTIVITY",
+            "done" => "3 / REVIEW CANDIDATES: a selects, d starts review",
+            _ => "1 / COLLECT FOLLOWERS: press s",
         }
-    }
-    let mut lines = vec![Line::from(stages)];
+    };
+    let mut lines = vec![Line::styled(format!(" {current}"), bold(ICE))];
     if spacious {
-        let policy = if area.width < 100 {
-            format!(
-                "{}d · zero posts {} · skip verified {} · skip following {}",
-                app.policy.inactive_days,
-                on(app.policy.include_zero_posts),
-                on(app.policy.skip_verified),
-                on(app.policy.skip_following)
-            )
-        } else {
-            format!(
-                "{}d inactive  ·  zero posts {}  ·  skip verified {}  ·  skip following {}",
-                app.policy.inactive_days,
-                on(app.policy.include_zero_posts),
-                on(app.policy.skip_verified),
-                on(app.policy.skip_following)
-            )
-        };
-        lines.push(Line::from(vec![
-            Span::styled(" POLICY  ", fg(MUTED)),
-            Span::styled(policy, fg(MUTED)),
-        ]));
+        let rule = format!(
+            " REMOVE candidates: inactive {}d{} · {} · {}",
+            app.policy.inactive_days,
+            if app.policy.include_zero_posts {
+                " OR zero posts"
+            } else {
+                ""
+            },
+            if app.policy.skip_verified {
+                "unverified only"
+            } else {
+                "any verification"
+            },
+            if app.policy.skip_following {
+                "you don't follow"
+            } else {
+                "any following"
+            }
+        );
+        lines.push(Line::styled(rule, fg(MUTED)));
+        lines.push(Line::styled(if app.pacing.remaining_seconds() > 0 && !app.paused {
+            format!(" NEXT TASK in {}s · {}", app.pacing.remaining_seconds(), app.pacing.reason)
+        } else { " Unknown evidence and kept accounts are protected. Selection does not remove anyone.".into() }, fg(MUTED)));
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
@@ -302,7 +268,7 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
     } else if !app.query.is_empty() {
         format!(" / {} ", clean(&app.query))
     } else if app.only_matching {
-        " MATCHING ONLY ".into()
+        " REMOVAL CANDIDATES ".into()
     } else {
         " ALL FOLLOWERS ".into()
     };
@@ -413,11 +379,12 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
                 );
             }
             cells.push(
-                Cell::from(decision.unwrap_or_else(|s| s)).style(fg(if decision.is_ok() {
-                    MINT
-                } else {
-                    MUTED
-                })),
+                Cell::from(format!(
+                    "{}: {}",
+                    if decision.is_ok() { "REMOVE" } else { "KEEP" },
+                    decision.unwrap_or_else(|s| s)
+                ))
+                .style(fg(if decision.is_ok() { MINT } else { MUTED })),
             );
             Row::new(cells).height(row_height).style(fg(TEXT).bg(
                 if (offset + i).is_multiple_of(2) {
@@ -489,9 +456,9 @@ fn render_evidence(frame: &mut Frame, app: &App, area: Rect, account: Option<&Ac
             Line::styled(clean(&a.name), fg(MUTED)),
             Line::styled(
                 if decision.is_ok() {
-                    "✓ MATCHES YOUR POLICY"
+                    "✓ REMOVAL CANDIDATE"
                 } else {
-                    "— EXCLUDED FROM MATCHES"
+                    "— PROTECTED FROM REMOVAL"
                 },
                 bold(if decision.is_ok() { MINT } else { AMBER }),
             ),
@@ -565,7 +532,8 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             theme::keys(&[
                 ("p", "pause / resume"),
                 ("c", "cancel queue"),
-                ("q", "save & quit"),
+                ("b", "background"),
+                ("q", "pause & quit"),
             ]),
             theme::keys(&[("Enter", "details"), ("?", "help")]),
         ]
@@ -576,7 +544,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ]
     } else if area.width < 90 {
         vec![
-            theme::keys(&[("s", "scan"), ("Space", "select"), ("d", "review")]),
+            theme::keys(&[("s", "collect"), ("i", "activity"), ("d", "remove")]),
             theme::keys(&[
                 ("f", "filters"),
                 ("p", "pause"),
@@ -587,16 +555,16 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         vec![
             theme::keys(&[
-                ("s", "scan"),
-                ("f", "filters"),
-                ("/", "search"),
+                ("s", "collect"),
+                ("i", "activity"),
+                ("f", "rules"),
                 ("Space", "select"),
-                ("a", "matching"),
+                ("a", "select candidates"),
                 ("d", "review removal"),
             ]),
             theme::keys(&[
                 ("K", "keep"),
-                ("m", "view"),
+                ("m", "candidates / all"),
                 ("p", "pause"),
                 ("c", "cancel"),
                 ("r", "reconcile"),
@@ -631,26 +599,32 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
         }
         Mode::Filters => {
             let labels = [
-                ("Inactive for", format!("{} days", app.policy.inactive_days)),
-                ("Skip verified", on(app.policy.skip_verified).into()),
                 (
-                    "Skip people you follow",
+                    "REMOVE: inactive at least",
+                    format!("{} days", app.policy.inactive_days),
+                ),
+                (
+                    "PROTECT: verified accounts",
+                    on(app.policy.skip_verified).into(),
+                ),
+                (
+                    "PROTECT: people you follow",
                     on(app.policy.skip_following).into(),
                 ),
                 (
-                    "Include zero posts",
+                    "REMOVE: zero posts too",
                     on(app.policy.include_zero_posts).into(),
                 ),
                 (
-                    "Removal interval",
+                    "Minimum removal interval",
                     format!("{} seconds", app.policy.delay_seconds),
                 ),
                 (
-                    "Maximum batch",
-                    format!("{} accounts", app.policy.batch_limit),
+                    "Hourly attempt budget",
+                    format!("{} / hour", app.policy.batch_limit),
                 ),
             ];
-            let lines = labels
+            let mut lines: Vec<Line> = labels
                 .into_iter()
                 .enumerate()
                 .map(|(i, (label, value))| {
@@ -667,11 +641,24 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                     )
                 })
                 .collect();
+            lines.push(Line::from(""));
+            lines.push(Line::styled(
+                "All conditions must pass. Unknown evidence stays protected.",
+                fg(MUTED),
+            ));
+            lines.push(Line::styled(
+                "These rules choose removal candidates; they do not hide accounts.",
+                fg(MUTED),
+            ));
+            lines.push(Line::styled(
+                "m changes the view. a selects candidates. d reviews the queue.",
+                fg(ICE),
+            ));
             popup(
                 frame,
-                " CLEANUP POLICY ",
+                " REMOVAL RULES / WHO CAN BE REMOVED ",
                 lines,
-                (60, 12),
+                (76, 16),
                 "↑ ↓ choose · ← → adjust · Enter saves",
                 0,
                 MINT,
@@ -731,14 +718,17 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 Line::styled("There is no restore-followers action.", bold(RED)),
                 Line::styled(
                     format!(
-                        "One at a time · {}s between removals",
+                        "One at a time · at least {}s · automatic cooldowns",
                         app.policy.delay_seconds
                     ),
                     fg(MUTED),
                 ),
             ];
             if !compact {
-                lines.push(Line::from(""));
+                lines.push(Line::styled(
+                    "b sends the approved queue to background; p pauses.",
+                    fg(ICE),
+                ));
                 lines.extend(
                     app.confirmation
                         .iter()
@@ -755,7 +745,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
             }
             popup(
                 frame,
-                " REVIEW REMOVAL ",
+                " APPROVE REMOVAL QUEUE ",
                 lines,
                 (68, if compact { 10 } else { 17 }),
                 "Enter / n / Esc cancels  ·  y confirms",

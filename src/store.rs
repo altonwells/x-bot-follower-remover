@@ -132,7 +132,7 @@ impl Store {
     }
     pub fn finished_targets(&self, batch: &str) -> Result<Vec<String>> {
         let mut q = self.conn.prepare(
-            "SELECT target FROM actions WHERE batch=? AND state NOT IN ('dispatched','uncertain')",
+            "SELECT target FROM actions WHERE batch=? AND state NOT IN ('dispatched','uncertain','deferred')",
         )?;
         Ok(q.query_map([batch], |r| r.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?)

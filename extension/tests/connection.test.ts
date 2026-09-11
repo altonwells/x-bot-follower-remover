@@ -97,6 +97,7 @@ async function harness(
         },
       },
       runtime: {
+        getManifest: () => ({ version: "0.1.8" }),
         id,
         getURL: (path: string) => path,
         sendNativeMessage: async () => {

@@ -9,3 +9,6 @@ pub mod setup;
 pub mod store;
 pub mod theme;
 pub mod ui;
+
+pub mod background;
+pub mod pacing;

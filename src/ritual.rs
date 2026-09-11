@@ -16,7 +16,10 @@ pub fn visible(app: &App) -> bool {
     app.batch.is_some() && app.mode == Mode::Browse
 }
 pub fn animating(app: &App) -> bool {
-    visible(app) && !app.paused && app.sender.is_some()
+    visible(app)
+        && !app.paused
+        && app.sender.is_some()
+        && app.pacing.until_ms <= crate::model::now_ms()
 }
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
@@ -32,6 +35,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
         "Disconnected · work stopped"
     } else if app.paused {
         "Paused · water off"
+    } else if app.pacing.remaining_seconds() > 0 {
+        "Cooling down · queue resumes automatically"
     } else {
         "Pouring one out for the timeline."
     };

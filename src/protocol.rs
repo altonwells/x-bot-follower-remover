@@ -56,6 +56,12 @@ pub enum WorkResult {
         status: String,
         message: String,
     },
+    Deferred {
+        target_id: String,
+        code: String,
+        message: String,
+        retry_at_ms: i64,
+    },
     Opened,
     Error {
         code: String,
@@ -70,6 +76,8 @@ pub enum ClientMessage {
         v: u8,
         token: String,
         extension_id: String,
+        #[serde(default)]
+        extension_version: Option<String>,
     },
     Heartbeat {
         session_id: String,

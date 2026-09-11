@@ -76,6 +76,7 @@ async function fixture(
         }),
       },
       storage: {
+        local: { get: async () => ({}), set: async () => {} },
         session: {
           get: async () => ({ webBearer: "Bearer test-bearer" }),
           set: async (v: object) => Object.assign(storage, v),
@@ -195,7 +196,7 @@ test("403 and rate limits are not retried as stale queries", async (t) => {
   status = 429;
   await assert.rejects(
     f.client.page("1", "followers", null),
-    (e: any) => e.code === "rate_limited" && e.retryAt === 2000000000000,
+    (e: any) => e.code === "rate_limited" && e.retryAt === 2000000002000,
   );
   assert.equal(f.calls.filter((c) => c.url.host === "x.com").length, 2);
 });

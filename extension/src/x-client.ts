@@ -1,3 +1,4 @@
+import { responseLimit, type LimitState } from "./rate-limit";
 import { readSigningPage } from "./page-seed";
 import {
   OPERATIONS,
@@ -34,6 +35,7 @@ export class XError extends Error {
 }
 type Templates = Partial<Record<Operation, Template>>;
 export class XClient {
+  private limits: Record<string, LimitState> = {};
   private bearer: string | null = null;
   private templates: Templates = {};
   private discoveryAt = 0;
@@ -94,6 +96,12 @@ export class XClient {
       adapterRevision?: number;
       globalFeatures?: Record<string, boolean>;
     }>(["webBearer", "templates", "globalFeatures", "adapterRevision"]);
+    this.limits =
+      (
+        await chrome.storage.local.get<{
+          requestLimits?: Record<string, LimitState>;
+        }>("requestLimits")
+      ).requestLimits ?? {};
     this.bearer ??= saved.webBearer ?? null;
     this.templates = {
       ...(saved.adapterRevision === 2 ? saved.templates : {}),
@@ -270,6 +278,7 @@ export class XClient {
       );
     const capabilities = [
       "adapter:2",
+      "durable_queue:1",
       "session",
       "inspect_account",
       "relationship",
@@ -286,10 +295,20 @@ export class XClient {
     body?: unknown,
     writeOwner?: string,
     guard?: () => void,
+    beforeWrite?: () => Promise<void>,
   ): Promise<any> {
     const epoch = this.readEpoch;
     if (!path.startsWith("/i/api/"))
       throw new XError("invalid_request", "Unsupported X path");
+    const owner = await this.ownerId();
+    const limitKey = `${owner}:${path.split("/").pop()}`;
+    const limit = this.limits[limitKey];
+    if (limit && limit.until > Date.now())
+      throw new XError(
+        "rate_limited",
+        `Waiting for ${path.split("/").pop()} request budget.`,
+        limit.until,
+      );
     const csrf = await chrome.cookies.get({
       url: "https://x.com/",
       name: "ct0",
@@ -315,6 +334,8 @@ export class XClient {
     this.assertRead(epoch);
     if (writeOwner) await this.assertOwner(writeOwner);
     guard?.();
+    if (beforeWrite) await beforeWrite();
+    guard?.();
     const controller = new AbortController();
     if (!body) this.abort = controller;
     const timer = setTimeout(() => controller.abort(), 20_000);
@@ -334,20 +355,37 @@ export class XClient {
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
+      this.limits[limitKey] = responseLimit(
+        response.headers,
+        response.status,
+        this.limits[limitKey],
+      );
+      // Limit storage to this owner and live cooldowns. No credentials are stored here.
+      this.limits = Object.fromEntries(
+        Object.entries(this.limits).filter(
+          ([key, value]) =>
+            key.startsWith(`${owner}:`) &&
+            (value.until > Date.now() || value.failures > 0),
+        ),
+      );
+      await chrome.storage.local.set({ requestLimits: this.limits });
       if (response.status === 429) {
-        const reset = Number(response.headers.get("x-rate-limit-reset"));
         throw new XError(
           "rate_limited",
           "X rate limit reached. Pause before resuming.",
-          Number.isFinite(reset) && reset > 0
-            ? reset * 1000
-            : Date.now() + 60_000,
+          this.limits[limitKey].until,
         );
       }
       if (response.status === 401 || response.status === 403)
         throw new XError(
           "access_denied",
           "X denied this request. Check your login, account restrictions, or private-interface compatibility.",
+        );
+      if (!body && response.status >= 500)
+        throw new XError(
+          "network_unavailable",
+          "X is temporarily unavailable; waiting before retry.",
+          Date.now() + 60_000,
         );
       if (!response.ok)
         throw new XError(
@@ -383,6 +421,14 @@ export class XClient {
           `${path.split("/").pop()} rejected the operation (code ${data.errors[0]?.code ?? "unknown"}).`,
         );
       return data;
+    } catch (error) {
+      if (!body && !(error instanceof XError))
+        throw new XError(
+          "network_unavailable",
+          "X read failed; waiting before retry.",
+          Date.now() + 60_000,
+        );
+      throw error;
     } finally {
       clearTimeout(timer);
       if (this.abort === controller) this.abort = null;
@@ -596,7 +642,7 @@ export class XClient {
         message: "Fresh evidence no longer meets the approved cleanup policy.",
       };
     const t = this.template("RemoveFollower");
-    await beforeWrite();
+    let dispatched = false;
     try {
       await this.request(
         `/i/api/graphql/${t.id}/RemoveFollower`,
@@ -604,6 +650,10 @@ export class XClient {
         { variables: { target_user_id: id }, queryId: t.id },
         owner,
         guard,
+        async () => {
+          await beforeWrite();
+          dispatched = true;
+        },
       );
       await this.assertOwner(owner);
       const state = await this.relationship(id);
@@ -616,7 +666,8 @@ export class XClient {
           ? "X acknowledged the request, but the follower relationship remains present."
           : "Verified that this account no longer follows you.",
       };
-    } catch {
+    } catch (error) {
+      if (!dispatched) throw error;
       return {
         kind: "action",
         target_id: id,

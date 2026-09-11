@@ -136,6 +136,7 @@ test("real collector and adapter identify account after live SVG removal and bar
         ],
       },
       storage: {
+        local: { get: async () => ({}), set: async () => {} },
         session: {
           get: async () => ({ webBearer: "Bearer fixture" }),
           set: async () => {},

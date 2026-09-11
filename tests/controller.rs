@@ -185,3 +185,121 @@ async fn an_outdated_browser_cannot_resume_saved_work_or_start_a_scan() {
     assert!(app.key(key('s')).await.is_err());
     assert!(rx.try_recv().is_err());
 }
+
+#[tokio::test]
+async fn collection_stops_before_activity_and_i_explicitly_starts_checks() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    let mut app = fixture();
+    app.scan.phase = "followers".into();
+    let work = Work {
+        command_id: "read".into(),
+        owner_id: "1".into(),
+        command: Command::ScanPage {
+            list: "followers".into(),
+            cursor: None,
+        },
+    };
+    app.pending = Some(work.clone());
+    app.paused = false;
+    app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+        session_id: "s".into(),
+        command_id: work.command_id,
+        result: WorkResult::Page {
+            list: "followers".into(),
+            accounts: vec![],
+            next_cursor: None,
+            complete: true,
+        },
+    }))
+    .await
+    .unwrap();
+    assert_eq!(app.scan.phase, "review");
+    assert!(app.paused);
+    app.key(key('i')).await.unwrap();
+    assert_eq!(app.scan.phase, "inspect");
+    assert!(!app.paused);
+}
+
+#[tokio::test]
+async fn approval_keeps_every_selected_target_instead_of_truncating_to_hourly_budget() {
+    let mut app = fixture();
+    let mut other = app.accounts["2"].clone();
+    other.id = "3".into();
+    app.accounts.insert("3".into(), other);
+    app.policy.batch_limit = 1;
+    app.selected.extend(["2".into(), "3".into()]);
+    app.key(key('d')).await.unwrap();
+    assert_eq!(app.confirmation.len(), 2);
+    app.key(key('y')).await.unwrap();
+    assert_eq!(app.batch.as_ref().unwrap().ids.len(), 2);
+}
+
+#[tokio::test]
+async fn deferred_removal_stays_queued_cooldown_survives_reload_and_is_not_unresolved() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    let mut app = fixture();
+    app.batch = Some(Batch {
+        id: "b".into(),
+        ids: VecDeque::from(["2".into()]),
+        policy: app.policy.clone(),
+    });
+    let work = Work {
+        command_id: "d".repeat(64),
+        owner_id: "1".into(),
+        command: Command::RemoveFollower {
+            target_id: "2".into(),
+            batch_id: "b".into(),
+            policy: app.policy.clone(),
+            deadline_ms: now_ms() + 120_000,
+        },
+    };
+    let copy = work.clone();
+    app.store.run(move |s| s.start_action(&copy)).await.unwrap();
+    app.pending = Some(work.clone());
+    app.paused = false;
+    let until = now_ms() + 300_000;
+    app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+        session_id: "s".into(),
+        command_id: work.command_id,
+        result: WorkResult::Deferred {
+            target_id: "2".into(),
+            code: "rate_limited".into(),
+            message: "wait".into(),
+            retry_at_ms: until,
+        },
+    }))
+    .await
+    .unwrap();
+    assert!(!app.paused);
+    assert_eq!(app.uncertain, 0);
+    assert_eq!(app.batch.as_ref().unwrap().ids.front().unwrap(), "2");
+    assert!(app.pacing.until_ms >= until);
+    app.store
+        .run(move |s| {
+            assert!(s.finished_targets("b")?.is_empty());
+            assert!(s.unresolved("1")?.is_empty());
+            assert!(
+                s.get::<forgive_me::pacing::Pacing>("pacing:1")?
+                    .unwrap()
+                    .until_ms
+                    >= until
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+#[test]
+fn rolling_hourly_budget_and_server_cooldown_survive_serialization() {
+    let mut pace = forgive_me::pacing::Pacing::default();
+    assert!(pace.reserve(1));
+    assert!(!pace.reserve(1));
+    assert!(pace.remaining_seconds() >= 3599);
+    let until = now_ms() + 7_200_000;
+    pace.retry(Some(until), "rate_limited");
+    let restored: forgive_me::pacing::Pacing =
+        serde_json::from_str(&serde_json::to_string(&pace).unwrap()).unwrap();
+    assert_eq!(restored.attempts.len(), 1);
+    assert!(restored.until_ms >= until);
+}

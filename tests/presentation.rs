@@ -115,3 +115,17 @@ fn all_modes_render_across_resize_boundaries() {
         }
     }
 }
+
+#[test]
+fn removal_rules_and_workflow_name_direction_and_next_action() {
+    let mut app = app();
+    app.scan.phase = "review".into();
+    let text = screen(&mut app, 140, 42, 0);
+    assert!(text.contains("READY TO CHECK ACTIVITY: press i"));
+    assert!(text.contains("unverified only"));
+    app.mode = Mode::Filters;
+    let text = screen(&mut app, 140, 42, 0);
+    assert!(text.contains("PROTECT: verified accounts"));
+    assert!(text.contains("REMOVE: zero posts too"));
+    assert!(text.contains("Hourly attempt budget"));
+}

@@ -142,3 +142,23 @@ References: [twscrape signing implementation](https://github.com/vladkens/twscra
 Simplify review removed duplicate seed validations and a derivable failed-asset counter, and skips futile asset downloads when the seed is unusable (net −5 implementation lines). Baseline and final extension checks each passed 54 tests; TypeScript exited 0. No speculative refactor was added.
 
 Release checks: cargo test --offline --locked exited 0 (37 passed); cargo clippy --offline --all-targets -- -D warnings exited 0. npm ci --offline and npm run check exited 0; npm test reported tests 54, pass 54, fail 0. The release build and extension bundle passed. The installer suite reported Ran 7 tests, OK; the release PTY suite reported Ran 1 test, OK. The added no-download assertion initially included the fixture's successful setup requests; clearing those before removing the seed corrected the test without changing implementation.
+
+## Workflow and background queues (v0.1.8)
+
+The user confirmed that loading the updated extension resolved the connection failure. The browser-transport replacement proposal was not adopted. The current signed-in adapter remains in use.
+
+Collection now stops at a review boundary; i starts activity checks. REMOVE and PROTECT labels describe candidate rules, and m explicitly changes only the view. Approval includes every selected eligible target. The existing batch_limit field now enforces a rolling hourly attempt budget rather than truncating the queue. New defaults are a 60-second minimum interval and 50 attempts per hour; saved settings are preserved. Existing approval, keep exceptions, and per-target fresh evidence checks remain.
+
+Reference inspection: twscrape's QueueClient/AccountsPool preserves endpoint reset locks; twikit's TooManyRequests carries the server reset header. Sources: https://github.com/vladkens/twscrape/blob/main/twscrape/queue_client.py and https://github.com/d60/twikit/blob/main/twikit/errors.py . X documents reset/remaining headers at https://docs.x.com/x-api/fundamentals/rate-limits ; those public API quotas are not assumed to apply to the private web interface. No account rotation or attempts to evade limits were added.
+
+Chrome persists owner/endpoint cooldowns, honors reset and Retry-After, and applies bounded exponential backoff when necessary. The controller persists hourly attempt reservations and cooldown timestamps. A deferred receipt is emitted only before the dispatch journal boundary. It closes that attempt without removing the target from the queue. Possible writes remain uncertain and cannot be replayed. Queued targets with old evidence are freshly checked rather than silently discarded for age alone.
+
+The same App controller can run as a detached child with separate process group and redirected stdio. It holds the original process lock and Chrome bridge; a mode-0600 Unix socket exposes only fixed local controls and status. Reopening forgive-me monitors the worker. Handoff waits for the pending browser task. Normal reconnect can resume only the same approved owner; manual pause, owner change, missing adapter capability, and uncertain receipts stop automatic continuation. Automatic launch at login is not configured, and Chrome/Mac availability remains required.
+
+Simplify review removed a duplicated success branch (−2 lines) and suppressed full redraws during idle cooldowns (no net line growth). Review also caught a page-ready event clearing an identity retry; the retry is now retained across unrelated events. The regression waits through the real 30-second backoff before observing a new session command. Completed/cancelled queues report no queued work instead of a misleading pause. The three review passes found no further actionable simplifications.
+
+Checks: full Rust suite exited 0 (44 tests); extension TypeScript check and 59 tests exited 0; Clippy with -D warnings exited 0. Release compilation/bundling passed. The installer suite passed 7 tests and the release PTY suite passed 1. The background integration verifies a private control socket, manual-pause preservation across reconnect, and page-ready retry survival. Rendered dashboard and rule modal were visually inspected. A separate packaged-process smoke test uses an isolated data directory and no X connection. Its first sandboxed run was denied a local socket bind and was rerun with socket permission.
+
+These checks do not constitute a live overnight removal run. No real followers were removed during development.
+
+The packaged-process smoke test passed after granting local socket access (Ran 1 test, OK). It verified status, pause, stop, and socket cleanup in a separate process with no X connection.
