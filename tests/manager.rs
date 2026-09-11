@@ -376,3 +376,130 @@ fn pouring_scene_survives_real_terminal_sizes_and_tags_keep_moving() {
         assert!(bottom.find("@departed").unwrap() > top.find("@departed").unwrap());
     }
 }
+
+#[test]
+fn brain_and_fly_follow_worker_states_and_keep_stopped_states_visible() {
+    use x_bot_follower_remover::{background::Status, insect::Motion, ritual::Animation, ui};
+    let mut status: Status = serde_json::from_value(json!({
+        "handle":"example", "state":"Full Auto", "remaining":1,"removed":7,
+        "uncertain":0,"wait_seconds":0,"message":"test", "has_job":true,"paused":false,
+        "phase":"inspect"
+    }))
+    .unwrap();
+    for (state, paused, wait, action, phase, expected, label) in [
+        (
+            "Full Auto",
+            false,
+            0,
+            "",
+            "followers",
+            Motion::Collect,
+            "COLLECTING",
+        ),
+        (
+            "Full Auto",
+            false,
+            0,
+            "Checking",
+            "inspect",
+            Motion::Inspect,
+            "CHECKING",
+        ),
+        (
+            "Full Auto",
+            false,
+            0,
+            "Removing",
+            "inspect",
+            Motion::Remove,
+            "REMOVING",
+        ),
+        (
+            "Full Auto",
+            false,
+            0,
+            "Reconciling",
+            "inspect",
+            Motion::Reconcile,
+            "RECONCILING",
+        ),
+        (
+            "Cooling down",
+            false,
+            60,
+            "Removing",
+            "inspect",
+            Motion::Rest,
+            "COOLDOWN",
+        ),
+        (
+            "Paused",
+            true,
+            60,
+            "Removing",
+            "inspect",
+            Motion::Paused,
+            "PAUSED",
+        ),
+        (
+            "Waiting for Chrome",
+            true,
+            60,
+            "Removing",
+            "inspect",
+            Motion::Disconnected,
+            "DISCONNECTED",
+        ),
+        (
+            "Needs reconciliation",
+            false,
+            0,
+            "",
+            "inspect",
+            Motion::Blocked,
+            "NEEDS REVIEW",
+        ),
+    ] {
+        status.state = state.into();
+        status.paused = paused;
+        status.wait_seconds = wait;
+        status.phase = phase.into();
+        status.working = (!action.is_empty()).then(|| (action.into(), "example".into()));
+        assert_eq!(Motion::from_status(&status), expected);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 46)).unwrap();
+        terminal
+            .draw(|f| {
+                ui::render_worker_with_animation(
+                    f,
+                    &status,
+                    None,
+                    false,
+                    false,
+                    Some(&Animation::default()),
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(
+            text.contains(&format!("BRAIN / VISUALIZATION · {label}")),
+            "{state}"
+        );
+        assert!(text.contains(&format!("FLY 01 / {label}")), "{state}");
+    }
+}
+
+#[test]
+fn completed_batch_is_idle_even_when_the_worker_pause_flag_is_set() {
+    use x_bot_follower_remover::{background::Status, insect::Motion};
+    let status: Status = serde_json::from_value(json!({"handle":"example", "state":"No queued work",
+        "remaining":0,"removed":7,"uncertain":0,"wait_seconds":0,"message":"Done", "has_job":false,"paused":true})).unwrap();
+    assert_eq!(Motion::from_status(&status), Motion::Still);
+    assert!(!Motion::from_status(&status).animating());
+}

@@ -1,5 +1,7 @@
-# Remover 0.4.5
+# Remover 0.4.6
 
-The brain now renders in 3D, with perspective, slow rotation, shaded lobes, and depth occlusion. Eight local activation clusters pulse through connected regions with individual point flashes. Work states and confirmed removals change the visual rhythm. Pausing freezes the animation.
+The fly now renders in 3D. Its body, compound eyes, paired wings, antennae, and six legs share one perspective camera and depth buffer. Near and far surfaces have separate positions and shading.
 
-This is an illustrative activity visualization, not measured neural data or a biological simulation. The detailed fly and pouring animation remain. Cleanup behavior and the Chrome driver are unchanged.
+Brain clusters and fly behavior now follow the current app state: collection, activity checks, removal, reconciliation, cooldown, paused, disconnected, blocked, or idle. Both panels show the same state. Confirmed removals trigger a separate brief response. Completed batches appear idle, and blocked jobs stop animation updates.
+
+The artwork visualizes app state, not measured neural activity. Cleanup rules, pacing, and the Chrome driver are unchanged.

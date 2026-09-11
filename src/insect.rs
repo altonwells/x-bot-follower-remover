@@ -10,31 +10,82 @@ pub enum Motion {
     Inspect,
     Remove,
     Rest,
+    Waiting,
+    Reconcile,
+    Paused,
+    Disconnected,
+    Blocked,
     Still,
 }
 impl Motion {
-    pub fn from_work(active: bool, waiting: bool, phase: &str, removing: bool) -> Self {
+    pub fn from_work(active: bool, waiting: bool, phase: &str, action: &str) -> Self {
         if !active {
             Self::Still
         } else if waiting {
             Self::Rest
-        } else if removing {
+        } else if action == "Removing" {
             Self::Remove
+        } else if action == "Reconciling" {
+            Self::Reconcile
+        } else if matches!(action, "Checking" | "Checking activity") {
+            Self::Inspect
         } else if matches!(phase, "following" | "followers") {
             Self::Collect
         } else if phase == "inspect" {
             Self::Inspect
         } else {
-            Self::Rest
+            Self::Waiting
         }
+    }
+    pub fn from_status(status: &crate::background::Status) -> Self {
+        if matches!(
+            status.state.as_str(),
+            "Waiting for Chrome" | "Checking account"
+        ) {
+            Self::Disconnected
+        } else if status.paused && status.has_job {
+            Self::Paused
+        } else if status
+            .working
+            .as_ref()
+            .is_some_and(|(action, _)| action == "Reconciling")
+            && status.wait_seconds == 0
+        {
+            Self::Reconcile
+        } else if status.state == "Needs reconciliation" {
+            Self::Blocked
+        } else {
+            Self::from_work(
+                status.has_job,
+                status.wait_seconds > 0,
+                &status.phase,
+                status.working.as_ref().map_or("", |(action, _)| action),
+            )
+        }
+    }
+    pub fn animating(self) -> bool {
+        matches!(
+            self,
+            Self::Collect
+                | Self::Inspect
+                | Self::Remove
+                | Self::Reconcile
+                | Self::Rest
+                | Self::Waiting
+        )
     }
     fn label(self) -> &'static str {
         match self {
-            Self::Collect => "WALKING",
-            Self::Inspect => "SENSING",
-            Self::Remove => "WORKING",
-            Self::Rest => "RESTING",
-            Self::Still => "STILL",
+            Self::Collect => "COLLECTING",
+            Self::Inspect => "CHECKING",
+            Self::Remove => "REMOVING",
+            Self::Rest => "COOLDOWN",
+            Self::Waiting => "WAITING",
+            Self::Reconcile => "RECONCILING",
+            Self::Paused => "PAUSED",
+            Self::Disconnected => "DISCONNECTED",
+            Self::Blocked => "NEEDS REVIEW",
+            Self::Still => "IDLE",
         }
     }
 }
@@ -44,6 +95,7 @@ struct Point {
     y: f32,
     z: f32,
     part: u8,
+    normal: [f32; 3],
 }
 // Shapes are sampled once. Animation only projects the same bounded point sets.
 fn ellipsoid(
@@ -61,11 +113,19 @@ fn ellipsoid(
         let x = radii[0] * radius * angle.cos();
         let y = radii[1] * radius * angle.sin();
         let (sin, cos) = tilt.sin_cos();
+        let n = [x / radii[0].powi(2), y / radii[1].powi(2), z / radii[2]];
+        let length = n.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let normal = [
+            (n[0] * cos - n[1] * sin) / length,
+            (n[0] * sin + n[1] * cos) / length,
+            n[2] / length,
+        ];
         points.push(Point {
             x: center[0] + x * cos - y * sin,
             y: center[1] + x * sin + y * cos,
             z: center[2] + radii[2] * z,
             part,
+            normal,
         });
     }
 }
@@ -112,10 +172,7 @@ fn brain_points() -> &'static [BrainPoint] {
                 }) {
                     continue;
                 }
-                let normal: [f32; 3] =
-                    std::array::from_fn(|i| (position[i] - center[i]) / radii[i].powi(2));
-                let length = normal.iter().map(|v| v * v).sum::<f32>().sqrt();
-                let normal = normal.map(|v| v / length);
+                let normal = p.normal;
                 // Fine surface relief catches the light as the brain turns.
                 let relief =
                     (p.x * 35.0 + p.z * 17.0).sin() * (p.y * 29.0 - p.z * 13.0).sin() * 0.012;
@@ -167,17 +224,24 @@ fn fly_points() -> &'static [Point] {
             2,
             -0.1,
         );
-        ellipsoid(
-            &mut p,
-            [0.46, -0.11, 0.20],
-            [0.095, 0.155, 0.035],
-            1800,
-            3,
-            0.15,
-        );
-        // Sparse membranes preserve transparent wings; bright veins carry their shape.
-        for (y, z) in [(-0.23, 0.08), (-0.32, -0.08)] {
-            ellipsoid(&mut p, [-0.30, y, z], [0.51, 0.12, 0.015], 650, 4, 0.20);
+        for side in [-1.0, 1.0] {
+            ellipsoid(
+                &mut p,
+                [0.46, -0.11, side * 0.20],
+                [0.095, 0.155, 0.035],
+                1800,
+                3,
+                0.15,
+            );
+            // Two thin, separate wing membranes extend out from the thorax.
+            ellipsoid(
+                &mut p,
+                [-0.28, -0.26, side * 0.25],
+                [0.51, 0.018, 0.22],
+                1000,
+                4,
+                0.12,
+            );
         }
         p
     })
@@ -202,9 +266,6 @@ impl Raster {
                 .min(f32::from(area.height) * 4.0 / aspect_height),
             ascii,
         }
-    }
-    fn dot(&mut self, x: f32, y: f32, intensity: u8) {
-        self.depth_dot(x, y, f32::INFINITY, intensity);
     }
     fn depth_dot(&mut self, x: f32, y: f32, depth: f32, intensity: u8) {
         let x = (f32::from(self.area.width) + x * self.scale).round() as i32;
@@ -231,16 +292,6 @@ impl Raster {
         };
         self.depth[pixel] = depth;
     }
-    fn line(&mut self, from: [f32; 2], to: [f32; 2], intensity: u8) {
-        for i in 0..48 {
-            let t = i as f32 / 47.0;
-            self.dot(
-                from[0] + (to[0] - from[0]) * t,
-                from[1] + (to[1] - from[1]) * t,
-                intensity,
-            );
-        }
-    }
     fn paint(&self, frame: &mut Frame, still: bool) {
         for (i, &bits) in self.dots.iter().enumerate() {
             if bits == 0 {
@@ -251,10 +302,15 @@ impl Raster {
             } else {
                 char::from_u32(0x2800 + u32::from(bits)).unwrap()
             };
+            let light = *self.light[i * 8..i * 8 + 8].iter().max().unwrap();
             let color = if still {
-                MUTED
+                match light {
+                    0 => Color::Rgb(36, 55, 64),
+                    1 => Color::Rgb(65, 84, 94),
+                    _ => MUTED,
+                }
             } else {
-                match self.light[i * 8..i * 8 + 8].iter().max().unwrap() {
+                match light {
                     0 => Color::Rgb(62, 94, 108),
                     1 => MUTED,
                     2 => ICE,
@@ -272,15 +328,21 @@ impl Raster {
         }
     }
 }
-struct BrainCamera {
+struct Camera {
     yaw: (f32, f32),
     pitch: (f32, f32),
 }
-impl BrainCamera {
-    fn new(time: f32) -> Self {
+impl Camera {
+    fn brain(time: f32) -> Self {
         Self {
             yaw: (0.38 + (time * 0.19).sin() * 0.46).sin_cos(),
             pitch: (-0.22 + (time * 0.13).sin() * 0.10).sin_cos(),
+        }
+    }
+    fn fly(time: f32) -> Self {
+        Self {
+            yaw: (-0.42 + (time * 0.16).sin() * 0.24).sin_cos(),
+            pitch: (0.40 + (time * 0.11).sin() * 0.06).sin_cos(),
         }
     }
     fn rotate(&self, [x, y, z]: [f32; 3]) -> [f32; 3] {
@@ -297,15 +359,20 @@ impl BrainCamera {
     }
 }
 fn cluster_activation(time: f32, motion: Motion, burst: f32) -> [f32; 8] {
-    let speed = match motion {
-        Motion::Rest => 0.45,
-        Motion::Collect => 0.8,
-        Motion::Remove => 1.3,
-        _ => 1.0,
+    if !motion.animating() {
+        return [0.0; 8];
+    }
+    let (weights, speed): ([f32; 8], f32) = match motion {
+        Motion::Collect => ([1.0, 0.65, 0.0, 0.0, 0.0, 0.0, 0.65, 1.0], 1.1),
+        Motion::Inspect => ([0.0, 0.3, 1.0, 0.0, 0.0, 1.0, 0.3, 0.0], 1.5),
+        Motion::Remove => ([0.0, 0.0, 0.25, 1.0, 1.0, 0.25, 0.0, 0.0], 2.4),
+        Motion::Reconcile => ([0.0, 0.65, 1.0, 0.0, 0.0, 1.0, 0.65, 0.0], 0.7),
+        _ => ([0.10; 8], 0.25),
     };
     std::array::from_fn(|i| {
         let phase = (time * speed - i as f32 * 0.48).rem_euclid(4.8);
-        let pulse = (1.0 - ((phase - 0.65) / 0.65).abs()).max(0.0);
+        let pulse = (1.0 - ((phase - 0.65) / 0.65).abs()).max(0.0) * weights[i];
+        // A broad response is reserved for an actual confirmed-removal receipt.
         let receipt = if burst > 0.0 {
             (1.0 - (((1.0 - burst) * 2.0 - i as f32 * 0.16) / 0.5).abs()).max(0.0)
         } else {
@@ -314,9 +381,10 @@ fn cluster_activation(time: f32, motion: Motion, burst: f32) -> [f32; 8] {
         pulse.max(receipt)
     })
 }
+
 fn brain(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, ascii: bool) {
     let mut raster = Raster::new(area, 2.7, 1.4, ascii);
-    let camera = BrainCamera::new(time);
+    let camera = Camera::brain(time);
     let activation = cluster_activation(time, motion, burst);
     for (i, p) in brain_points().iter().enumerate() {
         let normal = camera.rotate(p.normal);
@@ -360,111 +428,165 @@ fn brain(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, a
             }
         }
     }
-    raster.paint(frame, motion == Motion::Still);
+    raster.paint(frame, !motion.animating());
 }
 fn fly(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, ascii: bool) {
-    let mut raster = Raster::new(area, 2.65, 1.40, ascii);
-    let walking = matches!(motion, Motion::Collect | Motion::Remove);
+    let mut raster = Raster::new(area, 2.8, 1.6, ascii);
+    let camera = Camera::fly(time);
+    let walking = motion == Motion::Collect;
+    let flying = motion == Motion::Remove || (burst > 0.0 && motion.animating());
     let swing = if walking { time * 5.0 } else { 0.0 };
-    let bob = if walking { swing.sin() * 0.015 } else { 0.0 };
+    let bob = if flying {
+        -0.055
+    } else if walking {
+        swing.sin() * 0.015
+    } else {
+        0.0
+    };
+    let flap = if flying {
+        0.35 + (time * 18.0).sin() * 0.65
+    } else {
+        0.12
+    };
+    let (wing_sin, wing_cos) = flap.sin_cos();
+    let wing_rotate = |[x, y, z]: [f32; 3], side: f32| {
+        [
+            x,
+            y * wing_cos - z * side * wing_sin,
+            y * side * wing_sin + z * wing_cos,
+        ]
+    };
+    let wing_position = |[x, y, z]: [f32; 3]| {
+        let side = z.signum();
+        let [x, y, z] = wing_rotate([x - 0.1, y + 0.16, z - side * 0.08], side);
+        [x + 0.1, y - 0.16, z + side * 0.08]
+    };
+    let project = |[x, y, z]: [f32; 3]| {
+        let [x, y, z] = camera.project([x, y + bob, z]);
+        [x * 1.4, y - 0.07, z]
+    };
     for p in fly_points() {
-        let mut y = p.y + bob;
-        if p.part == 4 && (motion == Motion::Remove || burst > 0.0) {
-            y -= ((time * 30.0).sin() * 0.12).abs();
+        let mut position = [p.x, p.y, p.z];
+        let mut normal = p.normal;
+        if p.part == 4 {
+            position = wing_position(position);
+            normal = wing_rotate(normal, p.z.signum());
         }
-        // Shade the visible shell; suppress the far side instead of flattening both surfaces.
-        if p.part != 4 && p.z < 0.025 {
+        let normal = camera.rotate(normal);
+        if p.part != 4 && normal[2] < 0.0 {
             continue;
         }
+        let illumination = (-normal[0] * 0.30 - normal[1] * 0.45 + normal[2] * 0.80).max(0.0);
         let light = if p.part == 3 {
-            if ((p.x * 130.0) as i32 + (p.y * 130.0) as i32).rem_euclid(3) == 0 {
+            if illumination > 0.7
+                && ((p.x * 130.0) as i32 + (p.y * 130.0) as i32).rem_euclid(3) == 0
+            {
                 4
             } else {
                 5
             }
         } else if p.part == 4 || (p.part == 0 && ((p.x + 0.7) * 25.0).rem_euclid(4.0) < 0.6) {
             0
-        } else if p.z > 0.15 {
+        } else if illumination > 0.78 {
             2
-        } else if p.z > 0.09 {
+        } else if illumination > 0.36 {
             1
         } else {
             0
         };
-        raster.dot(p.x * 1.45, y * 0.85 - 0.05, light);
+        let [x, y, z] = project(position);
+        raster.depth_dot(x, y, z, light);
     }
-    let project = |p: [f32; 2]| [p[0] * 1.45, p[1] * 0.85 - 0.05];
-    for offset in [0.0, -0.10] {
-        let flutter = if motion == Motion::Remove || burst > 0.0 {
-            ((time * 30.0).sin() * 0.12).abs()
-        } else {
-            0.0
-        };
-        let root = project([0.10, -0.13 + offset - flutter]);
-        for tip in [[-0.73, -0.42], [-0.78, -0.29], [-0.64, -0.20]] {
-            raster.line(root, project([tip[0], tip[1] + offset - flutter]), 1);
+    // Every appendage is projected in the same camera and depth buffer as the body.
+    let line = |raster: &mut Raster, from: [f32; 3], to: [f32; 3], light| {
+        for i in 0..48 {
+            let t = i as f32 / 47.0;
+            let [x, y, z] = project(std::array::from_fn(|axis| {
+                from[axis] * (1.0 - t) + to[axis] * t
+            }));
+            raster.depth_dot(x, y, z, light);
         }
-    }
-    // Alternating tripod gait: three legs per side with opposite phase.
-    for side in 0..2 {
+    };
+    for side in [-1.0, 1.0] {
+        let root = wing_position([0.10, -0.18, side * 0.08]);
+        for tip in [
+            [-0.77, -0.29, side * 0.24],
+            [-0.61, -0.27, side * 0.43],
+            [-0.35, -0.24, side * 0.45],
+        ] {
+            line(&mut raster, root, wing_position(tip), 1);
+        }
+        // Opposite tripod phases, with real near/far-side separation.
         for leg in 0..3 {
             let step = if walking {
-                (swing + (leg + side) as f32 * std::f32::consts::PI).sin()
+                (swing + (leg as f32 + side.max(0.0)) * std::f32::consts::PI).sin()
             } else {
                 0.0
             };
             let base_x = 0.19 - leg as f32 * 0.15;
-            let reach = 0.6 - leg as f32 * 0.54;
-            let lift = if walking { step.max(0.0) * 0.08 } else { 0.0 };
-            let grooming = if motion == Motion::Rest && leg == 0 {
-                (time * 2.0).sin() * 0.06
+            let reach = 0.58 - leg as f32 * 0.53;
+            let lift = if walking {
+                step.max(0.0) * 0.09
+            } else if flying {
+                0.08
             } else {
                 0.0
             };
-            let knee = [reach * 0.6 + side as f32 * 0.05, 0.32 + bob];
-            let foot = [
-                reach + step * 0.09 + side as f32 * 0.10,
-                0.66 - lift - grooming,
-            ];
-            raster.line(
-                project([base_x, 0.1]),
-                project(knee),
-                if side == 0 { 1 } else { 0 },
-            );
-            raster.line(project(knee), project(foot), if side == 0 { 2 } else { 1 });
-            raster.line(project(foot), project([foot[0] + 0.06, foot[1] + 0.01]), 1);
+            let knee = [reach * 0.6, 0.30, side * 0.29];
+            let foot = [reach + step * 0.09, 0.60 - lift, side * 0.40];
+            line(&mut raster, [base_x, 0.10, side * 0.12], knee, 1);
+            line(&mut raster, knee, foot, 2);
+            line(&mut raster, foot, [foot[0] + 0.06, foot[1], foot[2]], 1);
             for bristle in 1..4 {
                 let t = bristle as f32 / 4.0;
-                let point = [
-                    knee[0] + (foot[0] - knee[0]) * t,
-                    knee[1] + (foot[1] - knee[1]) * t,
-                ];
-                raster.line(
-                    project(point),
-                    project([point[0] - 0.025, point[1] - 0.018]),
+                let point: [f32; 3] =
+                    std::array::from_fn(|axis| knee[axis] + (foot[axis] - knee[axis]) * t);
+                line(
+                    &mut raster,
+                    point,
+                    [point[0] - 0.025, point[1] - 0.018, point[2] + side * 0.018],
                     1,
                 );
             }
         }
+        let feel = if matches!(motion, Motion::Inspect | Motion::Reconcile) {
+            (time * if motion == Motion::Inspect { 6.0 } else { 2.0 } + side).sin() * 0.08
+        } else {
+            0.0
+        };
+        line(
+            &mut raster,
+            [0.51, -0.17, side * 0.08],
+            [0.70, -0.28 + feel, side * 0.22],
+            2,
+        );
+        line(
+            &mut raster,
+            [0.55, -0.02, side * 0.05],
+            [0.62, 0.11, side * 0.04],
+            1,
+        );
+        for i in 0..14 {
+            let x = -0.12 + i as f32 * 0.025;
+            let y = -0.27 - (1.0 - ((x - 0.05) / 0.25).powi(2)).max(0.0).sqrt() * 0.045;
+            line(
+                &mut raster,
+                [x, y, side * 0.08],
+                [x - 0.025, y - 0.055, side * 0.10],
+                1,
+            );
+        }
     }
-    let feel = if motion == Motion::Inspect {
-        (time * 6.0).sin() * 0.07
-    } else {
-        0.0
-    };
-    raster.line(project([0.51, -0.17]), project([0.70, -0.28 + feel]), 2);
-    raster.line(project([0.49, -0.20]), project([0.59, -0.37 - feel]), 1);
-    raster.line(project([0.55, -0.02]), project([0.62, 0.11]), 1);
-    for i in 0..14 {
-        let x = -0.12 + i as f32 * 0.025;
-        let y = -0.27 - (1.0 - ((x - 0.05) / 0.25).powi(2)).max(0.0).sqrt() * 0.045;
-        raster.line(project([x, y]), project([x - 0.025, y - 0.055]), 1);
+    // A perspective ground reference makes the camera angle legible.
+    for side in [-1.0, 1.0] {
+        for i in 0..44 {
+            let [x, y, z] = project([-0.94 + i as f32 * 0.044, 0.62 - bob, side * 0.45]);
+            raster.depth_dot(x, y, z, 0);
+        }
     }
-    for i in 0..60 {
-        raster.dot(-1.3 + i as f32 * 0.044, 0.60, 0);
-    }
-    raster.paint(frame, motion == Motion::Still);
+    raster.paint(frame, !motion.animating());
 }
+
 pub fn render(
     frame: &mut Frame,
     area: Rect,
@@ -477,7 +599,7 @@ pub fn render(
         ratatui::layout::Constraint::Percentage(47),
     ])
     .areas(area);
-    let brain_block = panel(" BRAIN / VISUALIZATION ");
+    let brain_block = panel(format!(" BRAIN / VISUALIZATION · {} ", motion.label()));
     let brain_area = brain_block.inner(upper);
     frame.render_widget(brain_block, upper);
     let fly_block = panel(format!(" FLY 01 / {} ", motion.label()));
@@ -493,7 +615,8 @@ pub fn render(
     brain(frame, brain_area, time, motion, burst, ascii);
     fly(frame, fly_area, time, motion, burst, ascii);
     // A small event pulse travels between the two figures, inside their panels.
-    if motion != Motion::Still && area.height >= 22 {
+    if motion.animating() && !matches!(motion, Motion::Rest | Motion::Waiting) && area.height >= 22
+    {
         let x = area.x + area.width / 2;
         for y in [
             upper.bottom() - 3,
@@ -535,10 +658,42 @@ mod tests {
             assert!(activation.iter().filter(|&&v| v > 0.0).count() <= 3);
         }
         let point = [0.9, 0.1, 0.2];
-        let first = BrainCamera::new(0.0).project(point);
-        let later = BrainCamera::new(6.0).project(point);
+        let first = Camera::brain(0.0).project(point);
+        let later = Camera::brain(6.0).project(point);
         assert!((first[0] - later[0]).abs() > 0.1);
         assert!((first[2] - later[2]).abs() > 0.1);
+    }
+    #[test]
+    fn each_work_state_activates_its_own_regions_and_stopped_states_do_not_fire() {
+        for (motion, region, silent) in [
+            (Motion::Collect, 0, 3),
+            (Motion::Inspect, 2, 0),
+            (Motion::Remove, 3, 0),
+            (Motion::Reconcile, 2, 3),
+        ] {
+            let mut peak = 0.0_f32;
+            for step in 0..200 {
+                let activation = cluster_activation(step as f32 * 0.05, motion, 0.0);
+                peak = peak.max(activation[region]);
+                assert_eq!(activation[silent], 0.0);
+            }
+            assert!(peak > 0.9, "{motion:?}");
+        }
+        for motion in [
+            Motion::Still,
+            Motion::Paused,
+            Motion::Disconnected,
+            Motion::Blocked,
+        ] {
+            assert!(!motion.animating());
+            assert_eq!(cluster_activation(1.0, motion, 1.0), [0.0; 8]);
+        }
+        let camera = Camera::fly(1.0);
+        let front = camera.project([0.0, 0.0, 0.3]);
+        let back = camera.project([0.0, 0.0, -0.3]);
+        assert!((front[0] - back[0]).abs() > 0.1);
+        assert!((front[1] - back[1]).abs() > 0.1);
+        assert!(front[2] > back[2]);
     }
     fn capture(motion: Motion, clock: u64, age: Option<u64>) -> ratatui::buffer::Buffer {
         let mut terminal = Terminal::new(TestBackend::new(90, 32)).unwrap();
@@ -559,16 +714,19 @@ mod tests {
         assert_ne!(inspect, capture(Motion::Inspect, 700, Some(400)));
         assert_eq!(inspect, capture(Motion::Inspect, 700, Some(2000)));
         assert_eq!(
-            Motion::from_work(false, true, "inspect", true),
+            Motion::from_work(false, true, "inspect", "Removing"),
             Motion::Still
         );
-        assert_eq!(Motion::from_work(true, true, "inspect", true), Motion::Rest);
         assert_eq!(
-            Motion::from_work(true, false, "inspect", true),
+            Motion::from_work(true, true, "inspect", "Removing"),
+            Motion::Rest
+        );
+        assert_eq!(
+            Motion::from_work(true, false, "inspect", "Removing"),
             Motion::Remove
         );
         assert_eq!(
-            Motion::from_work(true, false, "followers", false),
+            Motion::from_work(true, false, "followers", ""),
             Motion::Collect
         );
     }

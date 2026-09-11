@@ -45,8 +45,32 @@ pub fn visible(app: &App) -> bool {
         && !app.show_queue_list
         && matches!(app.mode, Mode::Browse | Mode::Settings)
 }
+pub fn motion(app: &App) -> crate::insect::Motion {
+    use crate::insect::Motion;
+    if app.sender.is_none() || app.handle.is_empty() {
+        Motion::Disconnected
+    } else if app.paused && (app.batch.is_some() || app.auto_policy.is_some()) {
+        Motion::Paused
+    } else if app
+        .pending
+        .as_ref()
+        .is_some_and(|w| matches!(w.command, Command::Reconcile { .. }))
+        && app.pacing.remaining_seconds() == 0
+    {
+        Motion::Reconcile
+    } else if app.uncertain > 0 && !app.simple_running() {
+        Motion::Blocked
+    } else {
+        Motion::from_work(
+            app.batch.is_some() || app.auto_policy.is_some(),
+            app.pacing.remaining_seconds() > 0,
+            &app.scan.phase,
+            app.active_target().map_or("", |(_, action)| action),
+        )
+    }
+}
 pub fn animating(app: &App) -> bool {
-    visible(app) && !app.paused && app.sender.is_some()
+    visible(app) && motion(app).animating()
 }
 fn ink(frame: &mut Frame, area: Rect, x: u16, y: u16, text: &str, style: Style) {
     if x < area.width && y < area.height {
@@ -144,12 +168,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
         handle: &app.handle,
         removed: app.removed,
         active: animating(app),
-        motion: crate::insect::Motion::from_work(
-            animating(app),
-            app.pacing.remaining_seconds() > 0,
-            &app.scan.phase,
-            target.is_some_and(|(label, _)| label == "Removing"),
-        ),
+        motion: motion(app),
         state,
         target_label,
         removing: if target.is_some_and(|(label, _)| label == "Removing") {

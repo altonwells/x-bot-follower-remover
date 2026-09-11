@@ -267,8 +267,10 @@ fn main() {
             "Full Auto"
         }
         .into();
+        let mut state_animation = x_bot_follower_remover::ritual::Animation::default();
+        state_animation.advance(std::time::Duration::from_secs(1));
         scenes.push(capture_frame(name, 160, 46, |f| {
-            ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
+            ui::render_worker_with_animation(f, &state, None, false, false, Some(&state_animation))
         }));
     }
     println!("{}", serde_json::to_string(&scenes).unwrap());

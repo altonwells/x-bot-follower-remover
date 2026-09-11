@@ -1305,28 +1305,28 @@ pub fn render_worker_with_animation(
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
     if let Some(animation) = animation
-        && state.has_job
+        && (state.has_job || !state.recent_removals.is_empty())
         && !details
-        && !matches!(
-            state.state.as_str(),
-            "Waiting for Chrome" | "Checking account"
-        )
     {
-        let active = !state.paused;
+        let motion = crate::insect::Motion::from_status(state);
+        let active = motion.animating();
         let scene = crate::ritual::Scene {
             handle: &state.handle,
             removed: state.removed,
             active,
-            motion: crate::insect::Motion::from_work(
-                active,
-                state.wait_seconds > 0,
-                &state.phase,
-                state
-                    .working
-                    .as_ref()
-                    .is_some_and(|(action, _)| action == "Removing"),
-            ),
-            state: if state.paused {
+            motion,
+            state: if motion == crate::insect::Motion::Disconnected {
+                "Disconnected · b opens X · o connection help".into()
+            } else if motion == crate::insect::Motion::Blocked {
+                "Needs review · work stopped".into()
+            } else if motion == crate::insect::Motion::Still {
+                if state.has_job {
+                    "Waiting for next task"
+                } else {
+                    "Queue complete"
+                }
+                .into()
+            } else if state.paused {
                 "Paused · water stopped".into()
             } else if state.wait_seconds > 0 {
                 format!(

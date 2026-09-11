@@ -321,7 +321,7 @@ async fn run(
          _=clock.tick()=>{
             let elapsed = animation_clock.elapsed();
             animation_clock = std::time::Instant::now();
-            if !no_animation && (app.batch.is_some() || app.auto_policy.is_some()) && !app.paused && app.sender.is_some() {
+            if !no_animation && x_bot_follower_remover::ritual::motion(&app).animating() {
                 app.animation.advance(elapsed);
             }
             if (no_animation || !x_bot_follower_remover::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at || app.pacing.until_ms > now_ms()) { redraw = false; }
@@ -514,13 +514,7 @@ async fn monitor(dir: &Path, no_animation: bool, advanced: bool) -> Result<()> {
     loop {
         let elapsed = clock.elapsed();
         clock = std::time::Instant::now();
-        if !no_animation
-            && !state.paused
-            && state.has_job
-            && !matches!(
-                state.state.as_str(),
-                "Waiting for Chrome" | "Checking account"
-            )
+        if !no_animation && x_bot_follower_remover::insect::Motion::from_status(&state).animating()
         {
             animation.advance(elapsed);
         }
@@ -546,7 +540,7 @@ async fn monitor(dir: &Path, no_animation: bool, advanced: bool) -> Result<()> {
         })?;
         tokio::select! {
             _ = timer.tick() => { state = request(dir, Control::Status).await?; },
-            _ = animation_timer.tick(), if show_animation && !details && !no_animation && state.has_job && !state.paused && !matches!(state.state.as_str(), "Waiting for Chrome"|"Checking account") => {},
+            _ = animation_timer.tick(), if show_animation && !details && !no_animation && x_bot_follower_remover::insect::Motion::from_status(&state).animating() => {},
             event = keys.next() => if let Some(Ok(Event::Key(key))) = event {
                 if key.kind != KeyEventKind::Press { continue; }
                 if confirm_start {
