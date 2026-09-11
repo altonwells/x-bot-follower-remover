@@ -105,20 +105,45 @@ fn brain_points() -> &'static [Point] {
 fn fly_points() -> &'static [Point] {
     static POINTS: OnceLock<Vec<Point>> = OnceLock::new();
     POINTS.get_or_init(|| {
-        let mut p = Vec::with_capacity(2800);
-        ellipsoid(&mut p, [-0.35, 0.07, 0.0], [0.40, 0.18, 0.17], 800, 0, -0.1); // abdomen
-        ellipsoid(&mut p, [0.05, -0.04, 0.0], [0.25, 0.24, 0.20], 600, 1, 0.0); // thorax
-        ellipsoid(&mut p, [0.38, -0.11, 0.03], [0.19, 0.19, 0.19], 440, 2, 0.0); // head
+        let mut p = Vec::with_capacity(18000);
+        // Overlapping abdominal segments taper toward the rear.
+        for (x, radius) in [(-0.62, 0.09), (-0.50, 0.14), (-0.36, 0.18), (-0.20, 0.19)] {
+            ellipsoid(
+                &mut p,
+                [x, 0.06, 0.02],
+                [0.15, radius, radius * 0.85],
+                1700,
+                0,
+                -0.08,
+            );
+        }
         ellipsoid(
             &mut p,
-            [0.44, -0.10, 0.20],
-            [0.09, 0.14, 0.035],
-            240,
+            [0.06, -0.06, 0.0],
+            [0.25, 0.24, 0.21],
+            3400,
+            1,
+            -0.12,
+        );
+        ellipsoid(
+            &mut p,
+            [0.40, -0.12, 0.04],
+            [0.20, 0.20, 0.19],
+            2200,
+            2,
+            -0.1,
+        );
+        ellipsoid(
+            &mut p,
+            [0.46, -0.11, 0.20],
+            [0.095, 0.155, 0.035],
+            1800,
             3,
             0.15,
-        ); // compound eye
-        for (y, z) in [(-0.27, 0.06), (-0.37, -0.08)] {
-            ellipsoid(&mut p, [-0.28, y, z], [0.48, 0.12, 0.016], 360, 4, 0.35);
+        );
+        // Sparse membranes preserve transparent wings; bright veins carry their shape.
+        for (y, z) in [(-0.23, 0.08), (-0.32, -0.08)] {
+            ellipsoid(&mut p, [-0.30, y, z], [0.51, 0.12, 0.015], 650, 4, 0.20);
         }
         p
     })
@@ -185,6 +210,7 @@ impl Raster {
                     1 => MUTED,
                     2 => ICE,
                     3 => MINT,
+                    5 => AMBER,
                     _ => TEXT,
                 }
             };
@@ -228,7 +254,7 @@ fn brain(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, a
     raster.paint(frame, motion == Motion::Still);
 }
 fn fly(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, ascii: bool) {
-    let mut raster = Raster::new(area, 2.7, 1.65, ascii);
+    let mut raster = Raster::new(area, 2.65, 1.40, ascii);
     let walking = matches!(motion, Motion::Collect | Motion::Remove);
     let swing = if walking { time * 5.0 } else { 0.0 };
     let bob = if walking { swing.sin() * 0.015 } else { 0.0 };
@@ -237,16 +263,38 @@ fn fly(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, asc
         if p.part == 4 && (motion == Motion::Remove || burst > 0.0) {
             y -= ((time * 30.0).sin() * 0.12).abs();
         }
+        // Shade the visible shell; suppress the far side instead of flattening both surfaces.
+        if p.part != 4 && p.z < 0.025 {
+            continue;
+        }
         let light = if p.part == 3 {
-            3
-        } else if p.part == 4 {
-            1
-        } else if p.z > 0.1 {
+            if ((p.x * 130.0) as i32 + (p.y * 130.0) as i32).rem_euclid(3) == 0 {
+                4
+            } else {
+                5
+            }
+        } else if p.part == 4 || (p.part == 0 && ((p.x + 0.7) * 25.0).rem_euclid(4.0) < 0.6) {
+            0
+        } else if p.z > 0.15 {
             2
+        } else if p.z > 0.09 {
+            1
         } else {
             0
         };
-        raster.dot(p.x, y, light);
+        raster.dot(p.x * 1.45, y * 0.85 - 0.05, light);
+    }
+    let project = |p: [f32; 2]| [p[0] * 1.45, p[1] * 0.85 - 0.05];
+    for offset in [0.0, -0.10] {
+        let flutter = if motion == Motion::Remove || burst > 0.0 {
+            ((time * 30.0).sin() * 0.12).abs()
+        } else {
+            0.0
+        };
+        let root = project([0.10, -0.13 + offset - flutter]);
+        for tip in [[-0.73, -0.42], [-0.78, -0.29], [-0.64, -0.20]] {
+            raster.line(root, project([tip[0], tip[1] + offset - flutter]), 1);
+        }
     }
     // Alternating tripod gait: three legs per side with opposite phase.
     for side in 0..2 {
@@ -269,8 +317,25 @@ fn fly(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, asc
                 reach + step * 0.09 + side as f32 * 0.10,
                 0.66 - lift - grooming,
             ];
-            raster.line([base_x, 0.1], knee, if side == 0 { 1 } else { 0 });
-            raster.line(knee, foot, if side == 0 { 2 } else { 1 });
+            raster.line(
+                project([base_x, 0.1]),
+                project(knee),
+                if side == 0 { 1 } else { 0 },
+            );
+            raster.line(project(knee), project(foot), if side == 0 { 2 } else { 1 });
+            raster.line(project(foot), project([foot[0] + 0.06, foot[1] + 0.01]), 1);
+            for bristle in 1..4 {
+                let t = bristle as f32 / 4.0;
+                let point = [
+                    knee[0] + (foot[0] - knee[0]) * t,
+                    knee[1] + (foot[1] - knee[1]) * t,
+                ];
+                raster.line(
+                    project(point),
+                    project([point[0] - 0.025, point[1] - 0.018]),
+                    1,
+                );
+            }
         }
     }
     let feel = if motion == Motion::Inspect {
@@ -278,10 +343,16 @@ fn fly(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, asc
     } else {
         0.0
     };
-    raster.line([0.51, -0.17], [0.70, -0.28 + feel], 2);
-    raster.line([0.49, -0.20], [0.59, -0.37 - feel], 1);
+    raster.line(project([0.51, -0.17]), project([0.70, -0.28 + feel]), 2);
+    raster.line(project([0.49, -0.20]), project([0.59, -0.37 - feel]), 1);
+    raster.line(project([0.55, -0.02]), project([0.62, 0.11]), 1);
+    for i in 0..14 {
+        let x = -0.12 + i as f32 * 0.025;
+        let y = -0.27 - (1.0 - ((x - 0.05) / 0.25).powi(2)).max(0.0).sqrt() * 0.045;
+        raster.line(project([x, y]), project([x - 0.025, y - 0.055]), 1);
+    }
     for i in 0..60 {
-        raster.dot(-1.1 + i as f32 * 0.038, 0.73, 0);
+        raster.dot(-1.3 + i as f32 * 0.044, 0.60, 0);
     }
     raster.paint(frame, motion == Motion::Still);
 }
