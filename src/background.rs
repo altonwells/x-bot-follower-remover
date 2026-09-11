@@ -39,16 +39,16 @@ impl Status {
                 "Checking account"
             } else if app.uncertain > 0 {
                 "Needs reconciliation"
-            } else if app.batch.is_none() {
+            } else if app.batch.is_none() && app.auto_policy.is_none() {
                 "No queued work"
             } else if app.paused {
                 "Paused"
             } else if app.pacing.until_ms > now_ms() {
                 "Cooling down"
-            } else if app.batch.is_some() {
-                "Running"
+            } else if app.auto_policy.is_some() {
+                "Full Auto"
             } else {
-                "Complete"
+                "Running"
             }
             .into(),
             remaining: app.batch.as_ref().map_or(0, |b| b.ids.len()),
@@ -96,7 +96,10 @@ pub fn spawn(dir: &Path) -> Result<()> {
     Ok(())
 }
 pub async fn run(mut app: App, mut events: mpsc::Receiver<BridgeEvent>, dir: &Path) -> Result<()> {
-    anyhow::ensure!(app.batch.is_some(), "No approved removal queue to run");
+    anyhow::ensure!(
+        app.batch.is_some() || app.auto_policy.is_some(),
+        "No approved queue or Full Auto run"
+    );
     let expected_owner = app.owner.clone();
     let mut automatic = true;
     let mut identity_retry = false;
@@ -156,7 +159,7 @@ pub async fn run(mut app: App, mut events: mpsc::Receiver<BridgeEvent>, dir: &Pa
                     // A reconnect may resume only the owner and queue already approved by the user.
                     if !app.handle.is_empty() && app.owner != expected_owner {
                         automatic = false; app.pause().await?; app.log("X account changed. Stop the worker and confirm the account in the TUI.");
-                    } else if identified && result.is_ok() && automatic && !app.handle.is_empty() && app.paused && app.batch.is_some() && app.uncertain == 0 {
+                    } else if identified && result.is_ok() && automatic && !app.handle.is_empty() && app.paused && (app.batch.is_some() || app.auto_policy.is_some()) && app.uncertain == 0 {
                         if app.capabilities.iter().any(|c| c == "durable_queue:1") {
                             app.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE)).await?;
                         } else { automatic = false; app.log("Reload the Chrome extension. Durable queue support is missing."); }

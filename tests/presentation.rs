@@ -90,7 +90,7 @@ fn ritual_is_still_when_paused_and_reports_real_count_even_when_small() {
     let (tx, _rx) = tokio::sync::mpsc::channel(1);
     app.sender = Some(tx);
     app.paused = false;
-    assert_ne!(screen(&mut app, 140, 42, 0), screen(&mut app, 140, 42, 8));
+    assert_ne!(screen(&mut app, 140, 42, 0), screen(&mut app, 140, 42, 3));
 }
 #[test]
 fn all_modes_render_across_resize_boundaries() {
@@ -108,6 +108,8 @@ fn all_modes_render_across_resize_boundaries() {
             Mode::Browse,
             Mode::Search,
             Mode::Filters,
+            Mode::Settings,
+            Mode::AutoConfirm,
             Mode::Help,
             Mode::Confirm,
         ] {
@@ -202,4 +204,46 @@ fn sparse_old_is_a_candidate_and_missing_coverage_is_review_not_keep() {
     let text = screen(&mut app, 140, 42, 0);
     assert!(text.contains("REVIEW: Incomplete activity coverage"));
     assert!(!text.contains("PROTECTED FROM REMOVAL"));
+}
+
+#[test]
+fn stream_continues_during_cooldown_and_confirmed_tags_move_downward() {
+    let mut app = app();
+    let (tx, _rx) = tokio::sync::mpsc::channel(1);
+    app.sender = Some(tx);
+    app.paused = false;
+    app.show_queue_list = false;
+    app.batch = Some(Batch {
+        id: "b".into(),
+        ids: VecDeque::new(),
+        policy: app.policy.clone(),
+    });
+    app.pacing.until_ms = forgive_me::model::now_ms() + 60_000;
+    app.animation.removed("departed_user".into());
+    assert!(forgive_me::ritual::animating(&app));
+    let top = screen(&mut app, 140, 42, 0);
+    let down = screen(&mut app, 140, 42, 80);
+    assert!(top.contains("✓ REMOVED"));
+    assert!(down.find("@departed_user").unwrap() > top.find("@departed_user").unwrap());
+    assert_eq!(app.removed, 0); // Animation cannot invent confirmed counts.
+    app.animation.advance(std::time::Duration::from_secs(1));
+    for _ in 0..9 {
+        app.animation.advance(std::time::Duration::from_secs(1));
+    }
+    assert!(app.animation.departures.is_empty());
+}
+
+#[test]
+fn auto_consent_and_system_settings_fit_small_terminals() {
+    let mut app = app();
+    for (w, h) in [(52, 12), (80, 24), (140, 42)] {
+        app.mode = Mode::AutoConfirm;
+        let text = screen(&mut app, w, h, 0);
+        assert!(text.contains("There is no restore-followers action."));
+        assert!(text.contains("y starts Full Auto"));
+        app.mode = Mode::Settings;
+        let text = screen(&mut app, w, h, 0);
+        assert!(text.contains("Removal interval"));
+        assert!(text.contains("Enter / Esc saves"));
+    }
 }

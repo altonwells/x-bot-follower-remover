@@ -140,6 +140,16 @@ New installations use a minimum interval of 60 seconds and an hourly budget of 5
 
 X reset times and Retry-After headers can extend the wait. Cooldowns and attempt budgets survive process restarts. A transient read or rate limit before dispatch keeps the target queued. Authentication failures and uncertain writes stop work. The app does not promise a fixed completion time or immunity from X restrictions.
 
+### System settings and Full Auto
+
+Press `,` to change the actual queue pace. Use ↑/↓ to choose a setting and ←/→ to change it. Enter or Esc saves. Settings apply to the active queue, Full Auto, and future work. They do not change the approved removal rules or shorten a cooldown already in progress.
+
+Press **Shift+R** in this panel for the recommended starting configuration: **60 seconds between removals, 20 attempts per batch, 5 minutes of rest, and 50 attempts per hour**. This is a local starting point, not an X quota or a guarantee against restrictions. Attempts count even when a pre-write check stops removal. Batch counts and rest deadlines survive restarts. X reset times and adaptive cooldowns can extend any wait.
+
+Press **Shift+F**, review the rules, then `y` to start Full Auto. It starts a fresh collection of accounts you follow and your full follower list, then checks accounts in list order. Each eligible result goes straight into the removal queue using its saved evidence. This keeps activity checks near removal even during a long run. It completes one pass, then stops.
+
+Full Auto always protects verified accounts, people you follow, keep exceptions, and recently observed activity. Its inactivity, zero-post, and sparse-account rules are fixed for the run. The statistical score remains a review signal. `p` pauses, `c` cancels, and `b` sends the run to the background. A restart restores progress in a paused state; resume with `p`. To change the removal rules, cancel Full Auto first. To adjust only pacing, use System Settings.
+
 ### Background work
 
 After approval, press `b`. You can close the terminal after the handoff message. Run `forgive-me` again to open the background queue monitor. Closing that monitor leaves the queue running.
@@ -172,7 +182,9 @@ Chrome must stay open and signed in to the approved account. The Mac must stay a
 | `K` | Add or remove a keep exception |
 | `f` | Change the removal rules |
 | `d` | Review the full removal queue |
-| `b` | Move an approved queue to the background |
+| `b` | Move an approved queue or Full Auto to the background |
+| **Shift+F** | Review and start Full Auto on the entire follower list |
+| `,` | System settings: interval, batch amounts, rests, hourly limit |
 | `p` | Pause or continue work |
 | `c` | Cancel the remaining removals |
 | `r` | Resolve one uncertain result without another removal request |
@@ -191,7 +203,7 @@ To try the interface with fictional accounts:
 forgive-me --demo
 ```
 
-The removal queue shows the list and highlights the current account. Press `v` to show the pouring animation and confirmed removal count.
+The removal queue shows the list and highlights the current account. Press `v` for a continuous stream pouring onto X. The water keeps moving during cooldowns; a floating REMOVED tag appears only after a confirmed removal. Pausing stops the water. The display runs at at most 20 frames per second and does not advance queue work.
 To disable the animation:
 
 ```sh
@@ -216,7 +228,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.10 passed automated, terminal, and installer tests.
+Version 0.1.11 passed automated, terminal, and installer tests.
 The user confirmed the preceding X connection fix after loading the updated extension. The new background workflow has automated coverage; it has not run a live overnight removal test.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).

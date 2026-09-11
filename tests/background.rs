@@ -168,3 +168,83 @@ async fn page_ready_does_not_erase_a_scheduled_identity_retry() {
         .unwrap();
     worker.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn full_auto_worker_resumes_collection_without_an_existing_removal_batch() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    store.set("last_owner", &"1").unwrap();
+    store
+        .set("auto:1", &Some(forgive_me::model::Policy::default()))
+        .unwrap();
+    store
+        .set(
+            "scan:1",
+            &forgive_me::app::Scan {
+                adapter_revision: 2,
+                phase: "following".into(),
+                started_at: forgive_me::model::now_ms(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let app = App::new(store, false).unwrap();
+    assert!(app.auto_policy.is_some() && app.paused);
+    let (events, rx) = mpsc::channel(16);
+    let path = dir.path().to_path_buf();
+    let worker = tokio::spawn(async move { background::run(app, rx, &path).await });
+    for _ in 0..100 {
+        if dir.path().join("worker.sock").exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let (tx, mut rx) = mpsc::channel(8);
+    events
+        .send(BridgeEvent::Connected {
+            session_id: "s".into(),
+            sender: tx,
+        })
+        .await
+        .unwrap();
+    let work = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    events
+        .send(BridgeEvent::Message(ClientMessage::Result {
+            session_id: "s".into(),
+            command_id: work["work"]["command_id"].as_str().unwrap().into(),
+            result: WorkResult::Session {
+                owner_id: "1".into(),
+                handle: "demo".into(),
+                capabilities: vec![
+                    "adapter:2".into(),
+                    "durable_queue:1".into(),
+                    "saved_activity:1".into(),
+                    "remove_follower".into(),
+                ],
+            },
+        }))
+        .await
+        .unwrap();
+    let page = tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let message = rx.recv().await.unwrap();
+            if message["type"] == "command" {
+                break message;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(page["work"]["command"]["kind"], "scan_page");
+    assert_eq!(page["work"]["command"]["list"], "following");
+    background::request(dir.path(), Control::Cancel)
+        .await
+        .unwrap();
+    background::request(dir.path(), Control::Stop)
+        .await
+        .unwrap();
+    worker.await.unwrap().unwrap();
+}

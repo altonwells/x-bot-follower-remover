@@ -494,3 +494,267 @@ fn volume_statistics_handle_small_equal_and_skewed_cohorts() {
     cohort[1].posts = None;
     assert!(post_volume(cohort.iter(), 0).contains("Need 30"));
 }
+
+#[test]
+fn batch_rest_is_durable_and_never_shortens_server_cooldowns() {
+    use forgive_me::pacing::Pacing;
+    let policy = Policy {
+        rest_every: 2,
+        rest_seconds: 300,
+        ..Default::default()
+    };
+    let mut pace = Pacing::default();
+    assert!(pace.reserve(50));
+    pace.after_attempt(&policy);
+    assert_eq!(pace.until_ms, 0);
+    assert!(pace.reserve(50));
+    pace.after_attempt(&policy);
+    assert!(pace.remaining_seconds() >= 299);
+    assert_eq!(pace.reason, "Batch rest");
+    let mut restored: Pacing =
+        serde_json::from_str(&serde_json::to_string(&pace).unwrap()).unwrap();
+    assert_eq!(restored.since_rest, 0);
+    assert_eq!(restored.attempts.len(), 2);
+    restored.until_ms = now_ms() + 900_000;
+    restored.reason = "rate_limited".into();
+    restored.since_rest = 2;
+    restored.after_attempt(&policy);
+    assert!(restored.remaining_seconds() >= 899);
+    assert_eq!(restored.reason, "rate_limited");
+}
+
+#[tokio::test]
+async fn system_settings_update_real_queue_pacing_but_preserve_rules_and_waits() {
+    let mut app = fixture();
+    let original = app.policy.clone();
+    app.batch = Some(Batch {
+        id: "b".into(),
+        ids: VecDeque::from(["2".into()]),
+        policy: original.clone(),
+    });
+    app.auto_policy = Some(original.clone());
+    app.pacing.until_ms = now_ms() + 900_000;
+    let until = app.pacing.until_ms;
+    app.key(key(',')).await.unwrap();
+    assert_eq!(app.mode, Mode::Settings);
+    app.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
+        .await
+        .unwrap();
+    app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+        .await
+        .unwrap();
+    app.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
+        .await
+        .unwrap();
+    app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+        .await
+        .unwrap();
+    assert_eq!(
+        app.batch.as_ref().unwrap().policy.delay_seconds,
+        original.delay_seconds - 5
+    );
+    assert_eq!(
+        app.batch.as_ref().unwrap().policy.rest_every,
+        original.rest_every - 1
+    );
+    assert_eq!(
+        app.auto_policy.as_ref().unwrap().delay_seconds,
+        original.delay_seconds - 5
+    );
+    assert_eq!(
+        app.batch.as_ref().unwrap().policy.inactive_days,
+        original.inactive_days
+    );
+    assert_eq!(app.pacing.until_ms, until);
+}
+
+#[tokio::test]
+async fn full_auto_collects_checks_removes_only_cleared_accounts_and_finishes() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    async fn reply(app: &mut App, result: WorkResult, rx: &mut mpsc::Receiver<serde_json::Value>) {
+        let id = app.pending.as_ref().unwrap().command_id.clone();
+        app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+            session_id: "s".into(),
+            command_id: id,
+            result,
+        }))
+        .await
+        .unwrap();
+        assert_eq!(rx.recv().await.unwrap()["type"], "ack");
+        app.next_at = std::time::Instant::now();
+        app.pacing.until_ms = 0;
+    }
+    let mut app = fixture();
+    let mut inactive = app.accounts["2"].clone();
+    inactive.handle = "alpha".into();
+    inactive.checked_at_ms = None;
+    let mut active = inactive.clone();
+    active.id = "99".into();
+    active.handle = "zulu".into();
+    active.posts = Some(20);
+    active.last_activity_ms = Some(now_ms());
+    let mut verified = inactive.clone();
+    verified.id = "3".into();
+    verified.verified = Some(true);
+    let mut mutual = inactive.clone();
+    mutual.id = "4".into();
+    mutual.i_follow = Some(true);
+    app.policy.skip_verified = false;
+    app.policy.skip_following = false;
+    app.scan.phase = "review".into();
+    app.scan.adapter_revision = 2;
+    let (tx, mut rx) = mpsc::channel(16);
+    app.sender = Some(tx);
+    app.key(key('F')).await.unwrap();
+    app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+        .await
+        .unwrap();
+    assert!(app.auto_policy.is_none());
+    app.key(key('F')).await.unwrap();
+    app.key(key('y')).await.unwrap();
+    assert!(app.auto_policy.as_ref().unwrap().skip_verified);
+    assert!(app.auto_policy.as_ref().unwrap().skip_following);
+    assert_eq!(rx.recv().await.unwrap()["type"], "resume");
+    for (list, accounts) in [
+        ("following", vec![mutual.clone()]),
+        (
+            "followers",
+            vec![inactive.clone(), active.clone(), verified, mutual],
+        ),
+    ] {
+        app.tick().await.unwrap();
+        assert_eq!(rx.recv().await.unwrap()["work"]["command"]["list"], list);
+        reply(
+            &mut app,
+            WorkResult::Page {
+                list: list.into(),
+                accounts,
+                next_cursor: None,
+                complete: true,
+            },
+            &mut rx,
+        )
+        .await;
+    }
+    assert_eq!(app.scan.phase, "inspect");
+    assert!(!app.paused);
+    app.tick().await.unwrap();
+    assert_eq!(
+        rx.recv().await.unwrap()["work"]["command"]["target_id"],
+        "2"
+    );
+    inactive.checked_at_ms = Some(now_ms());
+    reply(&mut app, WorkResult::Account { account: inactive }, &mut rx).await;
+    assert!(app.batch.is_some());
+    app.store
+        .run(|s| {
+            assert!(
+                s.accounts("1")?
+                    .iter()
+                    .any(|a| a.id == "2" && a.checked_at_ms.is_some())
+            );
+            assert!(s.get::<Option<Batch>>("batch:1")?.flatten().is_some());
+            Ok(())
+        })
+        .await
+        .unwrap();
+    app.tick().await.unwrap();
+    let removal = rx.recv().await.unwrap();
+    assert_eq!(removal["work"]["command"]["kind"], "remove_follower");
+    assert_eq!(removal["work"]["command"]["target_id"], "2");
+    reply(
+        &mut app,
+        WorkResult::Action {
+            target_id: "2".into(),
+            status: "verified_removed".into(),
+            message: "done".into(),
+        },
+        &mut rx,
+    )
+    .await;
+    assert_eq!(app.animation.departures.len(), 1);
+    assert_eq!(app.animation.departures[0].handle, "alpha");
+    app.tick().await.unwrap(); // finish this ready queue and continue Full Auto
+    app.tick().await.unwrap();
+    assert_eq!(
+        rx.recv().await.unwrap()["work"]["command"]["target_id"],
+        "99"
+    );
+    active.checked_at_ms = Some(now_ms());
+    reply(&mut app, WorkResult::Account { account: active }, &mut rx).await;
+    assert!(app.batch.is_none());
+    app.tick().await.unwrap();
+    assert!(app.auto_policy.is_none());
+    assert!(app.paused);
+    assert_eq!(app.removed, 1);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn cancelling_full_auto_ignores_a_late_activity_result_and_clears_saved_run() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    let mut app = fixture();
+    app.auto_policy = Some(app.policy.clone());
+    app.scan.phase = "inspect".into();
+    let account = app.accounts["2"].clone();
+    app.pending = Some(Work {
+        command_id: "inspection".into(),
+        owner_id: "1".into(),
+        command: Command::InspectAccount {
+            target_id: "2".into(),
+            policy: app.policy.clone(),
+        },
+    });
+    app.key(key('c')).await.unwrap();
+    app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+        session_id: "s".into(),
+        command_id: "inspection".into(),
+        result: WorkResult::Account { account },
+    }))
+    .await
+    .unwrap();
+    assert!(app.auto_policy.is_none());
+    assert!(app.batch.is_none());
+    assert!(app.paused);
+    app.store
+        .run(|s| {
+            assert!(s.get::<Option<Policy>>("auto:1")?.flatten().is_none());
+            assert!(s.get::<Option<Batch>>("batch:1")?.flatten().is_none());
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn final_collection_receipt_cannot_undo_a_full_auto_pause() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    let mut app = fixture();
+    app.auto_policy = Some(app.policy.clone());
+    app.scan.phase = "followers".into();
+    app.paused = false;
+    app.pending = Some(Work {
+        command_id: "last-page".into(),
+        owner_id: "1".into(),
+        command: Command::ScanPage {
+            list: "followers".into(),
+            cursor: None,
+        },
+    });
+    app.key(key('p')).await.unwrap();
+    app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+        session_id: "s".into(),
+        command_id: "last-page".into(),
+        result: WorkResult::Page {
+            list: "followers".into(),
+            accounts: vec![],
+            next_cursor: None,
+            complete: true,
+        },
+    }))
+    .await
+    .unwrap();
+    assert!(app.paused);
+    assert!(app.auto_policy.is_some());
+    assert_eq!(app.scan.phase, "inspect");
+}

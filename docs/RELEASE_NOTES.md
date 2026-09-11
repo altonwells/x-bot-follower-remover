@@ -1,11 +1,8 @@
-forgive-me v0.1.10 separates activity review from removal and improves sparse-account rules.
+forgive-me v0.1.11 adds System Settings, Full Auto, and a continuous cleanup animation.
 
-- Check activity with i, select cleared candidates with a, then approve with d and y. Removal uses saved activity evidence and makes no activity timeline requests. Identity and relationship protections still apply.
-- New reviews allow sparse + old accounts: at most five posts and an observed activity date older than your inactivity cutoff. This can qualify an account with incomplete timeline coverage. Change the limit in f; 0 disables it. Existing approved queues keep their original rules.
-- Incomplete checks say REVIEW, not KEEP. Dates say Seen to distinguish observed posts from complete inactivity evidence.
-- Account evidence shows post-count percentile and log-scale z-score for at least 30 known counts. Low outliers and numeric handles are supporting review signals, not independent bot verdicts.
-- Unchecked accounts cannot enter the removal queue. Saved activity older than 24 hours pauses for review instead of triggering a hidden rescan.
+- Press comma for actual queue controls: removal interval, attempts per batch, rest between batches, and hourly limit. Shift+R selects the recommended starting configuration: 60 seconds, 20 attempts, 5-minute rest, 50 per hour. Current cooldowns finish first; X limits always apply.
+- Shift+F reviews Full Auto for the entire follower list. After approval it collects fresh relationship lists, checks accounts in order, and removes eligible accounts using saved activity evidence. Verified accounts, people you follow, keep exceptions, and recent activity remain protected. One complete pass then stops.
+- Full Auto and batch/rest progress persist. Pause, cancel, reconnect, and background handoff use the existing controller. Activity results and automatic queue entries save in one transaction.
+- The animation pours continuously through cooldowns. Confirmed accounts float down the stream in small REMOVED tags. Unconfirmed attempts never add removal tags or counts.
 
-Restart forgive-me and Reload its extension in chrome://extensions before removing. The TUI checks for the new saved-activity capability and stops if the loaded browser worker is outdated. Pairing, settings, keep choices, and action history are preserved.
-
-No live followers were removed during testing.
+Restart forgive-me to use the update. Reload the bundled Chrome extension to show the matching version. Open sessions are not terminated by installation. No live follower removals were used to test this release.

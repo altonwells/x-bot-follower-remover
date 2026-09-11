@@ -247,9 +247,9 @@ async fn run(
     execute!(stdout(), EnableMouseCapture)?;
     terminal.clear()?;
     let mut keys = EventStream::new();
-    let mut clock = tokio::time::interval(Duration::from_millis(100));
+    let mut clock = tokio::time::interval(Duration::from_millis(50));
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let animation_clock = std::time::Instant::now();
+    let mut animation_clock = std::time::Instant::now();
     terminal.draw(|f| ui::render(f, &mut app, 0))?;
     let mut refresh = tokio::time::Instant::now();
     while !app.quit {
@@ -269,6 +269,11 @@ async fn run(
          },
          event=bridge.recv()=>match event{Some(event)=>app.bridge_event(event).await,None=>{app.quit=true;Ok(())}},
          _=clock.tick()=>{
+            let elapsed = animation_clock.elapsed();
+            animation_clock = std::time::Instant::now();
+            if !no_animation && (app.batch.is_some() || app.auto_policy.is_some()) && !app.paused && app.sender.is_some() {
+                app.animation.advance(elapsed);
+            }
             if (no_animation || !forgive_me::ritual::animating(&app)) && (app.paused || app.pending.is_some() || app.sender.is_none() || std::time::Instant::now() < app.next_at || app.pacing.until_ms > now_ms()) { redraw = false; }
             app.tick().await
          },
@@ -279,17 +284,9 @@ async fn run(
             app.log(format!("{e:#}"));
         }
         if redraw || refresh.elapsed() >= Duration::from_secs(1) {
-            terminal.draw(|f| {
-                ui::render(
-                    f,
-                    &mut app,
-                    if no_animation {
-                        0
-                    } else {
-                        (animation_clock.elapsed().as_millis() / 100) as u64
-                    },
-                )
-            })?;
+            let animation_tick = app.animation.clock_ms / 50;
+            terminal
+                .draw(|f| ui::render(f, &mut app, if no_animation { 0 } else { animation_tick }))?;
             refresh = tokio::time::Instant::now();
         }
     }

@@ -37,6 +37,8 @@ pub enum Mode {
     Browse,
     Search,
     Filters,
+    Settings,
+    AutoConfirm,
     Details,
     Help,
     Confirm,
@@ -73,6 +75,8 @@ pub struct App {
     pub show_queue_list: bool,
     pub pacing: crate::pacing::Pacing,
     pub detach_requested: bool,
+    pub animation: crate::ritual::Animation,
+    pub auto_policy: Option<Policy>,
 }
 impl App {
     pub fn new(store: Store, demo: bool) -> Result<Self> {
@@ -95,6 +99,18 @@ impl App {
         {
             policy.sparse_old_max_posts = Policy::default().sparse_old_max_posts;
             store.set("policy", &policy)?;
+        }
+        if saved_policy
+            .as_ref()
+            .is_some_and(|p| p.get("rest_every").is_none())
+        {
+            policy.rest_every = 20;
+            policy.rest_seconds = 300;
+            store.set("policy", &policy)?;
+        }
+        let auto_policy: Option<Policy> = store.get(&format!("auto:{owner}"))?.flatten();
+        if let Some(auto) = &auto_policy {
+            policy = auto.clone();
         }
         let scan = store.get(&format!("scan:{owner}"))?.unwrap_or_default();
         let batch = store.get(&format!("batch:{owner}"))?.flatten();
@@ -132,6 +148,8 @@ impl App {
             show_queue_list: true,
             pacing,
             detach_requested: false,
+            animation: crate::ritual::Animation::default(),
+            auto_policy,
         })
     }
     pub fn configure_setup(&mut self, config: &crate::config::Config) {
@@ -195,10 +213,33 @@ impl App {
     pub fn log(&mut self, text: impl Into<String>) {
         self.notice = clean(&text.into());
     }
+    async fn save_processing(&mut self) -> Result<()> {
+        let p = self.policy.clone();
+        if let Some(batch) = &mut self.batch {
+            batch.policy.copy_pacing(&p);
+        }
+        if let Some(auto) = &mut self.auto_policy {
+            auto.copy_pacing(&p);
+        }
+        self.store.run(move |s| s.set("policy", &p)).await?;
+        self.save_batch().await?;
+        self.log("Processing settings saved. Active cooldowns finish first; new settings apply to following work.");
+        Ok(())
+    }
     async fn save_batch(&self) -> Result<()> {
         let key = format!("batch:{}", self.owner);
         let b = self.batch.clone();
-        self.store.run(move |s| s.set(&key, &b)).await
+        let auto_key = format!("auto:{}", self.owner);
+        let auto = self.auto_policy.clone();
+        self.store
+            .run(move |s| {
+                let tx = s.conn.unchecked_transaction()?;
+                s.set(&key, &b)?;
+                s.set(&auto_key, &auto)?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await
     }
     async fn save_scan(&self) -> Result<()> {
         let key = format!("scan:{}", self.owner);
@@ -317,8 +358,9 @@ impl App {
             KeyCode::Char('c') => {
                 self.pause().await?;
                 self.batch = None;
+                self.auto_policy = None;
                 self.save_batch().await?;
-                self.log("Pending removals cancelled; an already dispatched action may finish.");
+                self.log("Full Auto and pending removals cancelled; an already dispatched action may finish.");
             }
             _ => {}
         }
@@ -392,6 +434,70 @@ impl App {
                 }
                 return Ok(());
             }
+            Mode::AutoConfirm => {
+                if key.code == KeyCode::Char('y') {
+                    if self.pending.is_some() || self.batch.is_some() || self.uncertain > 0 {
+                        bail!("Finish current work and reconcile uncertain actions first");
+                    }
+                    if !self.capabilities.iter().any(|c| c == "saved_activity:1")
+                        || !self.capabilities.iter().any(|c| c == "remove_follower")
+                    {
+                        bail!("Connect the current Chrome extension before Full Auto");
+                    }
+                    self.policy.skip_verified = true;
+                    self.policy.skip_following = true;
+                    self.scan.phase.clear();
+                    self.start_scan().await?;
+                    self.auto_policy = Some(self.policy.clone());
+                    self.save_batch().await?;
+                    self.mode = Mode::Browse;
+                    self.log("Full Auto started: collect all followers, then check and remove matching accounts in order. p pauses; c cancels; b backgrounds.");
+                } else if matches!(key.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('n')) {
+                    self.mode = Mode::Browse;
+                }
+                return Ok(());
+            }
+            Mode::Settings => {
+                match key.code {
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.filter_row = (self.filter_row + 1) % 4
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => self.filter_row = (self.filter_row + 3) % 4,
+                    KeyCode::Char('R') => self.policy.copy_pacing(&Policy::default()),
+                    KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+') => {
+                        let d = if matches!(key.code, KeyCode::Left | KeyCode::Char('-')) {
+                            -1
+                        } else {
+                            1
+                        };
+                        match self.filter_row {
+                            0 => {
+                                self.policy.delay_seconds =
+                                    (self.policy.delay_seconds as i32 + d * 5).clamp(5, 300) as u32
+                            }
+                            1 => {
+                                self.policy.rest_every =
+                                    (self.policy.rest_every as i32 + d).clamp(1, 100) as u32
+                            }
+                            2 => {
+                                self.policy.rest_seconds =
+                                    (self.policy.rest_seconds as i32 + d * 30).clamp(0, 3600) as u32
+                            }
+                            3 => {
+                                self.policy.batch_limit =
+                                    (self.policy.batch_limit as i32 + d * 10).clamp(1, 500) as usize
+                            }
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char(',') => {
+                        self.save_processing().await?;
+                        self.mode = Mode::Browse;
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
             Mode::Details | Mode::Help => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?') => {
@@ -448,7 +554,23 @@ impl App {
                 self.modal_scroll = 0;
                 self.mode = Mode::Details;
             }
+            KeyCode::Char(',') => {
+                self.filter_row = 0;
+                self.mode = Mode::Settings;
+            }
+            KeyCode::Char('F') => {
+                if self.batch.is_some() || self.pending.is_some() || self.auto_policy.is_some() {
+                    bail!("Pause and cancel existing work before starting Full Auto");
+                }
+                self.paused = true;
+                self.mode = Mode::AutoConfirm;
+            }
             KeyCode::Char('f') => {
+                if self.auto_policy.is_some() {
+                    bail!(
+                        "Full Auto rules are fixed. Cancel Full Auto to change them; , changes processing pace"
+                    );
+                }
                 if self.batch.is_some() {
                     bail!("Cancel the current batch before changing filters");
                 }
@@ -458,9 +580,15 @@ impl App {
                 self.only_matching = !self.only_matching;
                 self.focus = 0;
             }
-            KeyCode::Char('s') => self.start_scan().await?,
+            KeyCode::Char('s') => {
+                if self.auto_policy.is_some() {
+                    bail!("Full Auto already controls collection");
+                }
+                self.start_scan().await?;
+            }
             KeyCode::Char('i') => {
                 if self.batch.is_some()
+                    || self.auto_policy.is_some()
                     || self.pending.is_some()
                     || !matches!(self.scan.phase.as_str(), "review" | "inspect" | "done")
                 {
@@ -480,7 +608,7 @@ impl App {
                 if self.demo {
                     bail!("Background work is unavailable in demo mode");
                 }
-                if self.batch.is_none() || self.paused {
+                if (self.batch.is_none() && self.auto_policy.is_none()) || self.paused {
                     bail!("Approve and start a removal queue first (d then y)");
                 }
                 if !self.capabilities.iter().any(|c| c == "durable_queue:1") {
@@ -532,6 +660,9 @@ impl App {
                 }
             }
             KeyCode::Char('d') => {
+                if self.auto_policy.is_some() {
+                    bail!("Full Auto already manages the removal queue");
+                }
                 if self.batch.is_some() || self.pending.is_some() {
                     bail!(
                         "Pause and wait for the current task, or cancel the existing removal queue"
@@ -778,9 +909,13 @@ impl App {
                 self.submit(command).await?;
             } else {
                 self.batch = None;
-                self.paused = true;
+                self.paused |= self.auto_policy.is_none();
                 self.save_batch().await?;
-                self.log("Removal batch finished.");
+                self.log(if self.auto_policy.is_some() {
+                    "Full Auto: checking the next follower."
+                } else {
+                    "Removal batch finished."
+                });
             }
             return Ok(());
         }
@@ -810,9 +945,11 @@ impl App {
                     .await?;
                 } else {
                     self.scan.phase = "done".into();
+                    let was_auto = self.auto_policy.take().is_some();
+                    self.save_batch().await?;
                     self.paused = true;
                     self.save_scan().await?;
-                    self.log("Activity checked. f sets removal rules; m shows candidates; a selects candidates; d reviews the removal queue.");
+                    self.log(if was_auto { "Full Auto finished this follower list. All collected candidates were checked; protected accounts were kept." } else { "Activity checked. f sets removal rules; m shows candidates; a selects candidates; d reviews the removal queue." });
                 }
             }
             _ => self.paused = true,
@@ -973,6 +1110,9 @@ impl App {
             if status == "verified_removed" || status == "already_absent" {
                 self.pacing.failures = 0;
                 if let Some(a) = self.accounts.get_mut(&target) {
+                    if status == "verified_removed" && a.follows_me != Some(false) {
+                        self.animation.removed(a.handle.clone());
+                    }
                     a.follows_me = Some(false);
                     let (owner, record) = (self.owner.clone(), a.clone());
                     self.store
@@ -1023,7 +1163,7 @@ impl App {
                 self.selected.clear();
                 self.focus = 0;
                 let owner = self.owner.clone();
-                let (records, scan, batch, pacing) = self
+                let (records, scan, batch, pacing, auto_policy) = self
                     .store
                     .run(move |s| {
                         s.set("last_owner", &owner)?;
@@ -1032,6 +1172,7 @@ impl App {
                             s.get(&format!("scan:{owner}"))?.unwrap_or_default(),
                             s.get(&format!("batch:{owner}"))?.flatten(),
                             s.get(&format!("pacing:{owner}"))?.unwrap_or_default(),
+                            s.get(&format!("auto:{owner}"))?.flatten(),
                         ))
                     })
                     .await?;
@@ -1039,6 +1180,10 @@ impl App {
                 self.scan = scan;
                 self.batch = batch;
                 self.pacing = pacing;
+                self.auto_policy = auto_policy;
+                if let Some(auto) = &self.auto_policy {
+                    self.policy = auto.clone();
+                }
                 self.refresh_counts().await?;
                 if self.mode == Mode::Setup {
                     self.setup.as_mut().unwrap().go(Step::Ready);
@@ -1100,9 +1245,14 @@ impl App {
                         self.scan.following_complete = true;
                         self.scan.phase = "followers".into();
                     } else {
-                        self.scan.phase = "review".into();
-                        self.paused = true;
-                        self.log("Followers collected. f sets removal rules; i checks activity. Nothing is selected or removed yet.");
+                        self.scan.phase = if self.auto_policy.is_some() {
+                            "inspect"
+                        } else {
+                            "review"
+                        }
+                        .into();
+                        self.paused |= self.auto_policy.is_none();
+                        self.log(if self.auto_policy.is_some() { "Full Auto: followers collected. Checking and removing matching accounts in list order." } else { "Followers collected. f sets removal rules; i checks activity. Nothing is selected or removed yet." });
                     }
                 } else if self.scan.cursor.is_none() {
                     self.paused = true;
@@ -1121,9 +1271,19 @@ impl App {
                     bail!("Account response identity mismatch");
                 }
                 account.kept = self.accounts.get(&account.id).is_some_and(|a| a.kept);
-                let (owner, copy) = (self.owner.clone(), account.clone());
+                if let Some(policy) = &self.auto_policy
+                    && account.reason(policy, now_ms()).is_ok()
+                {
+                    self.batch = Some(Batch {
+                        id: new_id(),
+                        ids: VecDeque::from([account.id.clone()]),
+                        policy: policy.clone(),
+                    });
+                }
+                let (owner, copy, batch) =
+                    (self.owner.clone(), account.clone(), self.batch.clone());
                 self.store
-                    .run(move |s| s.save_page(&owner, &[copy], "last_inspection", &now_ms()))
+                    .run(move |s| s.save_page(&owner, &[copy], &format!("batch:{owner}"), &batch))
                     .await?;
                 self.accounts.insert(account.id.clone(), account);
             }
@@ -1213,6 +1373,9 @@ impl App {
                         Instant::now() + Duration::from_millis((retry - now_ms()).max(0) as u64);
                 }
             }
+        }
+        if let Command::RemoveFollower { policy, .. } = &w.command {
+            self.pacing.after_attempt(policy);
         }
         let seconds = if matches!(w.command, Command::RemoveFollower { .. }) {
             self.batch

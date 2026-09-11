@@ -1,4 +1,4 @@
-use crate::model::now_ms;
+use crate::model::{Policy, now_ms};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -8,6 +8,8 @@ pub struct Pacing {
     pub until_ms: i64,
     pub failures: u32,
     pub reason: String,
+    #[serde(default)]
+    pub since_rest: u32,
 }
 impl Pacing {
     pub fn retry(&mut self, server_ms: Option<i64>, reason: &str) {
@@ -28,7 +30,21 @@ impl Pacing {
             return false;
         }
         self.attempts.push(now);
+        self.since_rest = self.since_rest.saturating_add(1);
+        if self.until_ms <= now {
+            self.reason.clear();
+        }
         true
+    }
+    pub fn after_attempt(&mut self, policy: &Policy) {
+        if policy.rest_every > 0 && self.since_rest >= policy.rest_every {
+            self.since_rest = 0;
+            let until = now_ms() + i64::from(policy.rest_seconds) * 1000;
+            if until > self.until_ms {
+                self.until_ms = until;
+                self.reason = "Batch rest".into();
+            }
+        }
     }
     pub fn remaining_seconds(&self) -> i64 {
         ((self.until_ms - now_ms()).max(0) + 999) / 1000

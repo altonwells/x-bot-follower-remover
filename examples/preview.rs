@@ -163,7 +163,14 @@ fn main() {
     });
     scenes.push(capture(&mut app, "queue-list", 140, 42));
     app.show_queue_list = false;
+    app.pending = None;
+    app.animation.removed("departed_example".into());
     scenes.push(capture(&mut app, "cleanse", 140, 42));
+    app.mode = Mode::Settings;
+    scenes.push(capture(&mut app, "system-settings", 120, 34));
+    app.mode = Mode::AutoConfirm;
+    scenes.push(capture(&mut app, "auto-confirm", 120, 34));
+    scenes.push(capture(&mut app, "auto-minimum", 52, 12));
     app.configure_setup(&Config::default());
     app.mode = Mode::Setup;
     app.setup.as_mut().unwrap().go(Step::Pair);

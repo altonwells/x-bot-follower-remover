@@ -30,8 +30,13 @@ pub const HELP: &[(&str, &str)] = &[
     ("Enter", "Account details"),
     ("o", "Open X profile"),
     ("d", "4. Review and approve bulk removal"),
-    ("b", "Run approved queue in background"),
+    ("b", "Run approved queue or Full Auto in background"),
+    (
+        "Shift+F",
+        "Full Auto: collect, check, remove matching followers",
+    ),
     ("v", "Queue: switch list / pouring animation"),
+    (",", "System settings: pace, batch size, rests"),
     ("p", "Pause / resume"),
     ("c", "Cancel pending removals"),
     ("r", "Reconcile one uncertain action"),
@@ -148,13 +153,24 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_metrics(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
-    let items = if let Some(batch) = app.batch.as_ref().filter(|_| crate::ritual::visible(app)) {
+    let items = if crate::ritual::visible(app) {
+        let policy = app
+            .batch
+            .as_ref()
+            .map(|b| &b.policy)
+            .or(app.auto_policy.as_ref())
+            .unwrap_or(&app.policy);
         // Animated frames only read queue counters, never walk the follower inventory.
         [
-            ("QUEUED", batch.ids.len(), "remaining in batch", TEXT),
+            (
+                "QUEUED",
+                app.batch.as_ref().map_or(0, |b| b.ids.len()),
+                "ready to remove",
+                TEXT,
+            ),
             (
                 "INTERVAL",
-                batch.policy.delay_seconds as usize,
+                policy.delay_seconds as usize,
                 "seconds per removal",
                 ICE,
             ),
@@ -225,7 +241,9 @@ fn render_metrics(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
 }
 
 fn render_progress(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
-    let current = if app.batch.is_some() {
+    let current = if app.auto_policy.is_some() {
+        "FULL AUTO / COLLECT → CHECK → REMOVE MATCHES"
+    } else if app.batch.is_some() {
         "4 / REMOVAL QUEUE"
     } else {
         match app.scan.phase.as_str() {
@@ -601,7 +619,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false }),
         notice,
     );
-    let lines = if app.batch.is_some() && app.mode == Mode::Browse {
+    let lines = if (app.batch.is_some() || app.auto_policy.is_some()) && app.mode == Mode::Browse {
         vec![
             theme::keys(&[
                 ("p", "pause / resume"),
@@ -611,6 +629,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             ]),
             theme::keys(&[
                 ("v", "list / animation"),
+                (",", "settings"),
                 ("Enter", "details"),
                 ("?", "help"),
             ]),
@@ -652,7 +671,8 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
                 ("p", "pause"),
                 ("c", "cancel"),
                 ("r", "reconcile"),
-                ("P", "pair"),
+                ("F", "full auto"),
+                (",", "settings"),
                 ("?", "help"),
                 ("q", "quit"),
             ]),
@@ -663,6 +683,131 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_modal(frame: &mut Frame, app: &mut App) {
     match app.mode {
+        Mode::Settings => {
+            let choices = [
+                (
+                    "Removal interval",
+                    format!("{} seconds", app.policy.delay_seconds),
+                ),
+                ("Attempts per batch", app.policy.rest_every.to_string()),
+                (
+                    "Rest between batches",
+                    format!("{} seconds", app.policy.rest_seconds),
+                ),
+                ("Hourly attempt limit", app.policy.batch_limit.to_string()),
+            ];
+            let mut lines = vec![
+                Line::styled("Controls real queue processing", bold(TEXT)),
+                Line::from(""),
+            ];
+            for (row, (label, value)) in choices.iter().enumerate() {
+                lines.push(Line::styled(
+                    format!(
+                        "{} {label:24} ◀ {value} ▶",
+                        if row == app.filter_row { "›" } else { " " }
+                    ),
+                    if row == app.filter_row {
+                        bold(MINT)
+                    } else {
+                        fg(TEXT)
+                    },
+                ));
+            }
+            lines.extend([
+                Line::from(""),
+                Line::styled(
+                    "R recommended: 60s · 20 attempts · 5m rest · 50/hour",
+                    fg(ICE),
+                ),
+                Line::styled(
+                    format!(
+                        "Cooldown: {}s · {}",
+                        app.pacing.remaining_seconds(),
+                        if app.pacing.reason.is_empty() {
+                            "scheduled interval"
+                        } else {
+                            &app.pacing.reason
+                        }
+                    ),
+                    fg(AMBER),
+                ),
+                Line::styled(
+                    "Active cooldowns finish first. X limits always apply.",
+                    fg(MUTED),
+                ),
+                Line::styled("Settings apply to this queue and future work.", fg(MUTED)),
+            ]);
+            popup(
+                frame,
+                " SYSTEM SETTINGS ",
+                lines,
+                (72, 17),
+                "↑ ↓ choose · ← → adjust · Enter / Esc saves",
+                0,
+                ICE,
+            );
+        }
+        Mode::AutoConfirm => {
+            popup(
+                frame,
+                " FULL AUTO / ENTIRE FOLLOWER LIST ",
+                if frame.area().height < 20 {
+                    vec![
+                        Line::styled(format!("Full Auto: @{}", clean(&app.handle)), bold(TEXT)),
+                        Line::styled("Remove matching accounts across ALL followers.", fg(TEXT)),
+                        Line::styled("Keep verified / followed / recently active.", fg(MINT)),
+                        Line::styled(
+                            format!(
+                                "Rules: {}d · sparse ≤{} · zero {}",
+                                app.policy.inactive_days,
+                                app.policy.sparse_old_max_posts,
+                                on(app.policy.include_zero_posts)
+                            ),
+                            fg(ICE),
+                        ),
+                        Line::styled("There is no restore-followers action.", bold(RED)),
+                    ]
+                } else {
+                    vec![
+                        Line::styled(
+                            format!("Start Full Auto for @{}?", clean(&app.handle)),
+                            bold(TEXT),
+                        ),
+                        Line::styled(
+                            "Collect all followers → check activity → remove matches.",
+                            fg(TEXT),
+                        ),
+                        Line::styled(
+                            "Always keep verified accounts and people you follow.",
+                            bold(MINT),
+                        ),
+                        Line::styled(
+                            "Keep exceptions and recent activity remain protected.",
+                            fg(MINT),
+                        ),
+                        Line::styled(
+                            format!(
+                                "Rules: inactive {}d · zero {} · sparse + old ≤{} posts.",
+                                app.policy.inactive_days,
+                                on(app.policy.include_zero_posts),
+                                app.policy.sparse_old_max_posts
+                            ),
+                            fg(ICE),
+                        ),
+                        Line::styled(
+                            "Sparse + old may qualify with incomplete coverage.",
+                            fg(AMBER),
+                        ),
+                        Line::styled("There is no restore-followers action.", bold(RED)),
+                        Line::styled("p pauses · c cancels · b runs in background", fg(MUTED)),
+                    ]
+                },
+                (76, 15),
+                "Enter / n / Esc cancels · y starts Full Auto",
+                0,
+                RED,
+            );
+        }
         Mode::Help => {
             app.modal_scroll = popup(
                 frame,

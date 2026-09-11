@@ -25,6 +25,10 @@ pub struct Policy {
     pub sparse_old_max_posts: u32,
     pub delay_seconds: u32,
     pub batch_limit: usize,
+    #[serde(default)]
+    pub rest_every: u32,
+    #[serde(default)]
+    pub rest_seconds: u32,
 }
 impl Default for Policy {
     fn default() -> Self {
@@ -36,7 +40,18 @@ impl Default for Policy {
             sparse_old_max_posts: 5,
             delay_seconds: 60,
             batch_limit: 50,
+            rest_every: 20,
+            rest_seconds: 300,
         }
+    }
+}
+
+impl Policy {
+    pub fn copy_pacing(&mut self, source: &Self) {
+        self.delay_seconds = source.delay_seconds;
+        self.batch_limit = source.batch_limit;
+        self.rest_every = source.rest_every;
+        self.rest_seconds = source.rest_seconds;
     }
 }
 
