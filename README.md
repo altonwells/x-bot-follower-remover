@@ -167,7 +167,7 @@ remover --advanced
 
 Use the full inventory, evidence panel, manual selection, and custom rules. Press **?** for controls. Before a background job starts, **Tab** switches simple and advanced views.
 
-During a job, **v** switches the list and animation. The ladle pours over X beside a dot-rendered brain and fruit fly. The fly walks during collection, senses during checks, and rests during cooldowns. A confirmed removal triggers a brain pulse, wing movement, and a falling account tag. Pause stops motion.
+During a job, **v** switches the list and animation. The ladle pours over X beside a rotating 3D brain and a detailed fruit fly. Local activation clusters pulse across shaded brain regions. The fly walks during collection, senses during checks, and rests during cooldowns. A confirmed removal triggers a brain pulse, wing movement, and a falling account tag. Pause stops motion.
 
 The brain and fly are a visualization of queue activity, not a biological simulation or a bot classifier. The full scene fits terminals at least 112 columns wide with enough height; smaller windows retain the ladle view. Use `--no-animation` for a still view, or `REMOVER_ASCII=1 remover` if your terminal does not display Braille dots.
 

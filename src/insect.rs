@@ -69,37 +69,71 @@ fn ellipsoid(
         });
     }
 }
-fn brain_points() -> &'static [Point] {
-    static POINTS: OnceLock<Vec<Point>> = OnceLock::new();
+struct BrainPoint {
+    position: [f32; 3],
+    normal: [f32; 3],
+    clusters: [f32; 8],
+}
+// Original illustrative regions, not a measured connectome.
+const CLUSTERS: [[f32; 3]; 8] = [
+    [-0.94, 0.04, 0.20],
+    [-0.53, -0.20, 0.28],
+    [-0.23, -0.29, 0.31],
+    [-0.17, 0.25, 0.17],
+    [0.20, 0.23, 0.19],
+    [0.28, -0.29, 0.30],
+    [0.59, -0.13, 0.26],
+    [0.97, 0.09, 0.17],
+];
+fn brain_points() -> &'static [BrainPoint] {
+    static POINTS: OnceLock<Vec<BrainPoint>> = OnceLock::new();
     POINTS.get_or_init(|| {
-        let mut p = Vec::with_capacity(6800);
+        let mut lobes = Vec::new();
         for side in [-1.0, 1.0] {
-            ellipsoid(
-                &mut p,
-                [side * 0.83, 0.08, 0.0],
-                [0.39, 0.39, 0.32],
-                1400,
-                0,
-                side * 0.15,
-            );
-            ellipsoid(
-                &mut p,
-                [side * 0.32, -0.12, 0.05],
-                [0.40, 0.43, 0.35],
-                1500,
-                1,
-                side * 0.23,
-            );
-            ellipsoid(
-                &mut p,
-                [side * 0.16, 0.27, 0.0],
-                [0.20, 0.23, 0.22],
-                400,
-                2,
-                0.0,
-            );
+            lobes.extend([
+                ([side * 0.87, 0.05, 0.0], [0.37, 0.35, 0.34], 4000),
+                ([side * 0.32, -0.14, 0.03], [0.36, 0.40, 0.42], 5000),
+                ([side * 0.17, 0.25, 0.02], [0.19, 0.22, 0.25], 1800),
+            ]);
         }
-        p
+        let mut points = Vec::with_capacity(21600);
+        for &(center, radii, count) in &lobes {
+            let mut shell = Vec::with_capacity(count);
+            ellipsoid(&mut shell, center, radii, count, 0, 0.0);
+            for p in shell {
+                let position = [p.x, p.y, p.z];
+                // Hide surfaces inside another lobe, leaving a continuous outer shell.
+                if lobes.iter().any(|&(other, r, _)| {
+                    other != center
+                        && (0..3)
+                            .map(|i| ((position[i] - other[i]) / r[i]).powi(2))
+                            .sum::<f32>()
+                            < 0.98
+                }) {
+                    continue;
+                }
+                let normal: [f32; 3] =
+                    std::array::from_fn(|i| (position[i] - center[i]) / radii[i].powi(2));
+                let length = normal.iter().map(|v| v * v).sum::<f32>().sqrt();
+                let normal = normal.map(|v| v / length);
+                // Fine surface relief catches the light as the brain turns.
+                let relief =
+                    (p.x * 35.0 + p.z * 17.0).sin() * (p.y * 29.0 - p.z * 13.0).sin() * 0.012;
+                let position = std::array::from_fn(|i| position[i] + normal[i] * relief);
+                let clusters = CLUSTERS.map(|center| {
+                    let distance = (0..3)
+                        .map(|i| (position[i] - center[i]).powi(2))
+                        .sum::<f32>();
+                    (1.0 - distance / 0.115).max(0.0).powi(2)
+                });
+                points.push(BrainPoint {
+                    position,
+                    normal,
+                    clusters,
+                });
+            }
+        }
+        points
     })
 }
 fn fly_points() -> &'static [Point] {
@@ -152,6 +186,7 @@ struct Raster {
     area: Rect,
     dots: Vec<u8>,
     light: Vec<u8>,
+    depth: Vec<f32>,
     scale: f32,
     ascii: bool,
 }
@@ -161,13 +196,17 @@ impl Raster {
         Self {
             area,
             dots: vec![0; area.width as usize * area.height as usize],
-            light: vec![0; area.width as usize * area.height as usize],
+            light: vec![0; area.width as usize * area.height as usize * 8],
+            depth: vec![f32::NEG_INFINITY; area.width as usize * area.height as usize * 8],
             scale: (f32::from(area.width) * 2.0 / aspect_width)
                 .min(f32::from(area.height) * 4.0 / aspect_height),
             ascii,
         }
     }
     fn dot(&mut self, x: f32, y: f32, intensity: u8) {
+        self.depth_dot(x, y, f32::INFINITY, intensity);
+    }
+    fn depth_dot(&mut self, x: f32, y: f32, depth: f32, intensity: u8) {
         let x = (f32::from(self.area.width) + x * self.scale).round() as i32;
         let y = (f32::from(self.area.height) * 2.0 + y * self.scale).round() as i32;
         if x < 0
@@ -179,8 +218,18 @@ impl Raster {
         }
         let index = (y as usize / 4) * self.area.width as usize + x as usize / 2;
         let bits = [[0, 3], [1, 4], [2, 5], [6, 7]];
-        self.dots[index] |= 1 << bits[y as usize % 4][x as usize % 2];
-        self.light[index] = self.light[index].max(intensity);
+        let bit = bits[y as usize % 4][x as usize % 2];
+        let pixel = index * 8 + bit;
+        if depth < self.depth[pixel] {
+            return;
+        }
+        self.dots[index] |= 1 << bit;
+        self.light[pixel] = if depth == self.depth[pixel] {
+            self.light[pixel].max(intensity)
+        } else {
+            intensity
+        };
+        self.depth[pixel] = depth;
     }
     fn line(&mut self, from: [f32; 2], to: [f32; 2], intensity: u8) {
         for i in 0..48 {
@@ -205,7 +254,7 @@ impl Raster {
             let color = if still {
                 MUTED
             } else {
-                match self.light[i] {
+                match self.light[i * 8..i * 8 + 8].iter().max().unwrap() {
                     0 => Color::Rgb(62, 94, 108),
                     1 => MUTED,
                     2 => ICE,
@@ -223,33 +272,93 @@ impl Raster {
         }
     }
 }
-fn brain(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, ascii: bool) {
-    let mut raster = Raster::new(area, 2.65, 1.4, ascii);
+struct BrainCamera {
+    yaw: (f32, f32),
+    pitch: (f32, f32),
+}
+impl BrainCamera {
+    fn new(time: f32) -> Self {
+        Self {
+            yaw: (0.38 + (time * 0.19).sin() * 0.46).sin_cos(),
+            pitch: (-0.22 + (time * 0.13).sin() * 0.10).sin_cos(),
+        }
+    }
+    fn rotate(&self, [x, y, z]: [f32; 3]) -> [f32; 3] {
+        let (sy, cy) = self.yaw;
+        let (sx, cx) = self.pitch;
+        let x1 = x * cy + z * sy;
+        let z1 = z * cy - x * sy;
+        [x1, y * cx - z1 * sx, y * sx + z1 * cx]
+    }
+    fn project(&self, point: [f32; 3]) -> [f32; 3] {
+        let [x, y, z] = self.rotate(point);
+        let perspective = 3.8 / (3.8 - z);
+        [x * perspective, y * perspective, z]
+    }
+}
+fn cluster_activation(time: f32, motion: Motion, burst: f32) -> [f32; 8] {
     let speed = match motion {
-        Motion::Rest => 0.4,
-        Motion::Collect => 1.2,
-        _ => 2.0,
+        Motion::Rest => 0.45,
+        Motion::Collect => 0.8,
+        Motion::Remove => 1.3,
+        _ => 1.0,
     };
-    let wave = (time * speed).rem_euclid(2.8) - 1.4;
-    for p in brain_points() {
-        let x = p.x + p.z * (time * 0.2).sin() * 0.08;
-        let pulse = if motion == Motion::Inspect {
-            (p.x.abs() - wave.abs()).abs()
+    std::array::from_fn(|i| {
+        let phase = (time * speed - i as f32 * 0.48).rem_euclid(4.8);
+        let pulse = (1.0 - ((phase - 0.65) / 0.65).abs()).max(0.0);
+        let receipt = if burst > 0.0 {
+            (1.0 - (((1.0 - burst) * 2.0 - i as f32 * 0.16) / 0.5).abs()).max(0.0)
         } else {
-            (p.x - wave).abs()
+            0.0
         };
-        let intensity = if burst > 0.0 && (p.y - (0.8 - burst * 1.5)).abs() < 0.12 {
+        pulse.max(receipt)
+    })
+}
+fn brain(frame: &mut Frame, area: Rect, time: f32, motion: Motion, burst: f32, ascii: bool) {
+    let mut raster = Raster::new(area, 2.7, 1.4, ascii);
+    let camera = BrainCamera::new(time);
+    let activation = cluster_activation(time, motion, burst);
+    for (i, p) in brain_points().iter().enumerate() {
+        let normal = camera.rotate(p.normal);
+        if normal[2] < -0.1 {
+            continue;
+        }
+        let [x, y, z] = camera.project(p.position);
+        let energy = p
+            .clusters
+            .iter()
+            .zip(activation)
+            .map(|(weight, pulse)| weight * pulse)
+            .fold(0.0_f32, f32::max);
+        let illumination = (-normal[0] * 0.35 - normal[1] * 0.45 + normal[2] * 0.75).max(0.0);
+        // Local, discrete glints inside each active cluster; no full-width scan band.
+        let spark = (i as u64 * 17 + (time * 12.0) as u64).is_multiple_of(11);
+        let intensity = if energy > 0.30 && spark {
             4
-        } else if pulse < 0.08 {
+        } else if energy > 0.08 {
             3
-        } else if p.z > 0.15 {
+        } else if illumination > 0.78 {
             2
-        } else if p.z > 0.0 {
+        } else if illumination > 0.36 {
             1
         } else {
             0
         };
-        raster.dot(x, p.y, intensity);
+        raster.depth_dot(x, y, z, intensity);
+    }
+    // Short surface pathways connect the illustrative regions in firing order.
+    for (i, pair) in CLUSTERS.windows(2).enumerate() {
+        for step in 0..32 {
+            let t = step as f32 / 31.0;
+            let energy = activation[i] * (1.0 - t) + activation[i + 1] * t;
+            if energy > 0.12 {
+                let mut point =
+                    std::array::from_fn(|axis| pair[0][axis] * (1.0 - t) + pair[1][axis] * t);
+                point[2] += (t * std::f32::consts::PI).sin() * 0.10;
+                let [x, y, z] = camera.project(point);
+                raster.depth_dot(x, y, z, if energy > 0.5 { 3 } else { 1 });
+            }
+        }
     }
     raster.paint(frame, motion == Motion::Still);
 }
@@ -404,6 +513,33 @@ pub fn render(
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
+    #[test]
+    fn nearer_surface_hides_activation_on_the_far_surface() {
+        for far_first in [true, false] {
+            let mut raster = Raster::new(Rect::new(0, 0, 20, 10), 2.8, 1.65, false);
+            let samples = if far_first {
+                [(0.1, 4), (0.4, 1)]
+            } else {
+                [(0.4, 1), (0.1, 4)]
+            };
+            for (z, light) in samples {
+                raster.depth_dot(0.0, 0.0, z, light);
+            }
+            assert_eq!(raster.light.iter().copied().max(), Some(1));
+        }
+    }
+    #[test]
+    fn activation_stays_local_and_projection_changes_depth() {
+        for step in 0..100 {
+            let activation = cluster_activation(step as f32 * 0.1, Motion::Inspect, 0.0);
+            assert!(activation.iter().filter(|&&v| v > 0.0).count() <= 3);
+        }
+        let point = [0.9, 0.1, 0.2];
+        let first = BrainCamera::new(0.0).project(point);
+        let later = BrainCamera::new(6.0).project(point);
+        assert!((first[0] - later[0]).abs() > 0.1);
+        assert!((first[2] - later[2]).abs() > 0.1);
+    }
     fn capture(motion: Motion, clock: u64, age: Option<u64>) -> ratatui::buffer::Buffer {
         let mut terminal = Terminal::new(TestBackend::new(90, 32)).unwrap();
         terminal
