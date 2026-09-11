@@ -344,3 +344,104 @@ async fn simple_worker_preserves_pause_after_process_restart_and_accepts_only_pa
         );
     }
 }
+
+#[tokio::test]
+async fn signing_in_rechecks_worker_identity_without_resuming_a_manual_pause() {
+    for during_request in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store.set("last_owner", &"1").unwrap();
+        store
+            .set(
+                "auto:1",
+                &Some(x_bot_follower_remover::model::Policy::cleanup()),
+            )
+            .unwrap();
+        store.set("managed:1", &false).unwrap();
+        let app = App::new(store, false).unwrap();
+        let (events, rx) = mpsc::channel(16);
+        let path = dir.path().to_path_buf();
+        let worker = tokio::spawn(async move { background::run(app, rx, &path).await });
+        for _ in 0..100 {
+            if dir.path().join("worker.sock").exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let (tx, mut browser) = mpsc::channel(16);
+        events
+            .send(BridgeEvent::Connected {
+                session_id: "s".into(),
+                sender: tx,
+            })
+            .await
+            .unwrap();
+        let first = browser.recv().await.unwrap();
+        let ready = || {
+            BridgeEvent::Message(ClientMessage::XPageReady {
+                session_id: "s".into(),
+            })
+        };
+        if during_request {
+            events.send(ready()).await.unwrap();
+        }
+        events
+            .send(BridgeEvent::Message(ClientMessage::Result {
+                session_id: "s".into(),
+                command_id: first["work"]["command_id"].as_str().unwrap().into(),
+                result: WorkResult::Error {
+                    code: "login_required".into(),
+                    message: "Sign in".into(),
+                    retry_at_ms: None,
+                },
+            }))
+            .await
+            .unwrap();
+        assert_eq!(browser.recv().await.unwrap()["type"], "ack");
+        if !during_request {
+            events.send(ready()).await.unwrap();
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), browser.recv())
+                .await
+                .is_err()
+        );
+        let retry = tokio::time::timeout(Duration::from_secs(4), browser.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry["work"]["command"]["kind"], "get_session");
+        events
+            .send(BridgeEvent::Message(ClientMessage::Result {
+                session_id: "s".into(),
+                command_id: retry["work"]["command_id"].as_str().unwrap().into(),
+                result: WorkResult::Session {
+                    owner_id: "1".into(),
+                    handle: "example".into(),
+                    capabilities: vec![
+                        "adapter:2".into(),
+                        "durable_queue:1".into(),
+                        "simple_cleanup:1".into(),
+                    ],
+                },
+            }))
+            .await
+            .unwrap();
+        assert_eq!(browser.recv().await.unwrap()["type"], "ack");
+        let status = background::request(dir.path(), Control::Status)
+            .await
+            .unwrap();
+        assert_eq!(status.handle, "example");
+        assert_eq!(status.state, "Paused");
+        events.send(ready()).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), browser.recv())
+                .await
+                .is_err()
+        );
+        background::request(dir.path(), Control::Stop)
+            .await
+            .unwrap();
+        worker.await.unwrap().unwrap();
+    }
+}

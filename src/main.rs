@@ -189,11 +189,17 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, config.port))
         .await
         .context("Local bridge port unavailable; use --port to choose another")?;
+    let extension = x_bot_follower_remover::setup::extension_dir();
+    if let Some(home) = dirs::home_dir() {
+        x_bot_follower_remover::native::migrate_legacy_pairing(
+            &dir,
+            &mut config,
+            &home.join(".local/share/forgive-me/bundle/forgive-me-extension"),
+            &extension,
+        )?;
+    }
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
-    if let Err(error) = x_bot_follower_remover::native::register(
-        &dir,
-        &x_bot_follower_remover::setup::extension_dir(),
-    ) {
+    if let Err(error) = x_bot_follower_remover::native::register(&dir, &extension) {
         app.log(format!(
             "Automatic pairing unavailable: {error}. Manual pairing remains available."
         ));
@@ -224,6 +230,9 @@ async fn main() -> Result<()> {
     }
     if !background {
         app.configure_setup(&config);
+        if let Some(setup) = &mut app.setup {
+            setup.refresh_installation();
+        }
     }
     let bridge = tokio::spawn(bridge::serve(listener, config, dir.clone(), events_tx));
     let result = if background {
@@ -509,6 +518,9 @@ async fn monitor(dir: &Path) -> Result<()> {
                 }
                 let command = match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('i') => { x_bot_follower_remover::setup::open_install(&x_bot_follower_remover::setup::extension_dir()).await?; None },
+                    KeyCode::Char('o') => { x_bot_follower_remover::setup::open_options(&x_bot_follower_remover::setup::extension_dir()).await?; None },
+                    KeyCode::Char('b') => { x_bot_follower_remover::setup::open_chrome("https://x.com/".into()).await?; None },
                     KeyCode::Char(',') => { settings = Some((state.policy.clone(), 0)); None },
                     KeyCode::Enter if state.state == "No queued work" => { confirm_start = true; None },
                     KeyCode::Enter => { details = !details; None },

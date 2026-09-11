@@ -1,5 +1,5 @@
 // Protocol port informed by twscrape/xclid.py (MIT) and XClientTransaction (MIT).
-// See THIRD_PARTY_NOTICES.md. Seeds stay in Chrome; every request gets a fresh ID.
+// See THIRD_PARTY_LICENSES.txt. Seeds stay in Chrome; every request gets a fresh ID.
 export interface SigningSeed {
   key: string;
   frames: string[];

@@ -1,9 +1,11 @@
-# Remover 0.3.0
+# Remover 0.3.1
 
-The project is now x-bot-follower-remover. Run `remover` to open the terminal app.
+Startup now checks the live Chrome connection instead of assuming a saved pairing means the extension is still installed.
 
-Chrome has a new R icon and a redesigned connection page. The queue and 30-day removal rules are unchanged. Existing cleanup data remains accessible.
+The setup guide identifies current or old extension registrations and provides installation, pairing, and X sign-in steps. Enter opens Chrome and copies the correct folder path; r checks installation again. The cleanup screen appears only after live account confirmation. Offline background jobs also show connection instructions.
 
-When upgrading, stop the old worker, load the new extension folder, and disable the old extension. Run `remover pair --reset` with the app closed, then reopen it to pair. See the README for full steps.
+Pairing from the former default installation path is repaired automatically. Cleanup history and queues are preserved. Custom manually paired extensions are not rebound automatically.
 
-This release does not start cleanup during installation or pairing.
+The public installer no longer requires GitHub login. Installation does not approve a cleanup pass.
+
+The README now leads with the purpose, setup steps, and cleanup controls. The root changelog and reference-notices document were removed; required dependency license texts remain bundled.

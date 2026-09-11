@@ -177,6 +177,15 @@ fn main() {
     scenes.push(capture(&mut app, "auto-minimum", 52, 12));
     app.configure_setup(&Config::default());
     app.mode = Mode::Setup;
+    app.setup.as_mut().unwrap().go(Step::Install);
+    app.setup.as_mut().unwrap().installation =
+        x_bot_follower_remover::setup::Installation::LegacyOnly;
+    app.sender = None;
+    app.handle.clear();
+    app.notice = "Welcome. Let's connect your Chrome extension.".into();
+    scenes.push(capture(&mut app, "onboarding", 120, 34));
+    scenes.push(capture(&mut app, "onboarding-minimum", 52, 12));
+    app.setup.as_mut().unwrap().installation = x_bot_follower_remover::setup::Installation::Unknown;
     app.setup.as_mut().unwrap().go(Step::Pair);
     app.sender = None;
     app.handle.clear();

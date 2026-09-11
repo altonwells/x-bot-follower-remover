@@ -140,7 +140,7 @@ async fn reconnect_hides_secret_and_disconnect_cannot_leave_ready() {
 }
 
 #[test]
-fn returning_users_skip_setup_but_reset_or_incomplete_pairing_does_not() {
+fn saved_pairing_never_skips_live_connection_onboarding() {
     let store = Store::open(Path::new(":memory:")).unwrap();
     store.set("last_owner", &"1").unwrap();
     let mut app = App::new(store, false).unwrap();
@@ -149,7 +149,7 @@ fn returning_users_skip_setup_but_reset_or_incomplete_pairing_does_not() {
         ..Config::default()
     };
     app.configure_setup(&config);
-    assert_eq!(app.mode, Mode::Browse);
+    assert_eq!(app.mode, Mode::Setup);
     config.extension_id = None;
     app.configure_setup(&config);
     assert_eq!(app.mode, Mode::Setup);
@@ -381,4 +381,115 @@ async fn reconnect_preserves_identity_rate_limit_without_another_request() {
     page_ready(&mut app).await;
     assert!(app.sender.is_some() && app.pending.is_none());
     assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn simple_start_stays_in_onboarding_until_live_identity_is_confirmed() {
+    let mut app = app();
+    app.policy = x_bot_follower_remover::model::Policy::cleanup();
+    app.owner = "saved-owner".into();
+    app.setup.as_mut().unwrap().installation =
+        x_bot_follower_remover::setup::Installation::LegacyOnly;
+    let text = screen(&mut app, 94, 30);
+    assert!(text.contains("Only the old extension"));
+    assert!(text.contains("Set up Chrome"));
+    assert!(!text.contains("Start cleanup"));
+    assert!(!text.contains("press s to scan"));
+    let (tx, mut rx) = mpsc::channel(16);
+    app.bridge_event(BridgeEvent::Connected {
+        session_id: "browser".into(),
+        sender: tx,
+    })
+    .await
+    .unwrap();
+    rx.recv().await.unwrap();
+    result(
+        &mut app,
+        WorkResult::Session {
+            owner_id: "1".into(),
+            handle: "example".into(),
+            capabilities: vec!["adapter:2".into(), "simple_cleanup:1".into()],
+        },
+    )
+    .await;
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(app.mode, Mode::Browse);
+    assert!(app.paused && app.auto_policy.is_none() && app.pending.is_none());
+    assert!(screen(&mut app, 94, 30).contains("Enter Start cleanup"));
+    app.bridge_event(BridgeEvent::Disconnected("Chrome closed".into()))
+        .await
+        .unwrap();
+    assert_eq!(app.mode, Mode::Setup);
+    assert!(!screen(&mut app, 94, 30).contains("Start cleanup"));
+}
+
+#[test]
+fn chrome_registration_detection_distinguishes_missing_legacy_installed_and_unreadable() {
+    use x_bot_follower_remover::setup::{Installation, detect_installation};
+    let tmp = tempfile::tempdir().unwrap();
+    let extension = tmp.path().join("extension");
+    std::fs::create_dir(&extension).unwrap();
+    let root = tmp.path().join("chrome");
+    assert_eq!(
+        detect_installation(&root, &extension),
+        Installation::Unknown
+    );
+    let profile = root.join("Profile 2");
+    std::fs::create_dir_all(&profile).unwrap();
+    let file = profile.join("Secure Preferences");
+    std::fs::write(&file, "{}").unwrap();
+    assert_eq!(
+        detect_installation(&root, &extension),
+        Installation::NotFound
+    );
+    std::fs::write(
+        &file,
+        r#"{"extensions":{"settings":{"old":{"path":"/old/forgive-me-extension"}}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        detect_installation(&root, &extension),
+        Installation::LegacyOnly
+    );
+    let id = x_bot_follower_remover::native::extension_id(&extension).unwrap();
+    std::fs::write(&file, serde_json::to_vec(&serde_json::json!({"extensions":{"settings":{id:{"path":extension,"disable_reasons":[1]}}}})).unwrap()).unwrap();
+    assert_eq!(
+        detect_installation(&root, &extension),
+        Installation::Found("Profile 2".into())
+    );
+    std::fs::write(profile.join("Preferences"), "{}").unwrap();
+    std::fs::write(&file, "incomplete write").unwrap();
+    assert_eq!(
+        detect_installation(&root, &extension),
+        Installation::Unknown
+    );
+}
+
+#[test]
+fn renamed_bundle_repairs_only_the_known_old_pairing_once() {
+    use x_bot_follower_remover::{config, native};
+    let tmp = tempfile::tempdir().unwrap();
+    let old = tmp.path().join("old");
+    let new = tmp.path().join("new");
+    std::fs::create_dir(&old).unwrap();
+    std::fs::create_dir(&new).unwrap();
+    let mut config = Config {
+        extension_id: Some(native::extension_id(&old).unwrap()),
+        ..Default::default()
+    };
+    let token = config.token.clone();
+    let old = old.canonicalize().unwrap();
+    std::fs::remove_dir(&old).unwrap();
+    assert!(native::migrate_legacy_pairing(tmp.path(), &mut config, &old, &new).unwrap());
+    assert_eq!(
+        config.extension_id,
+        Some(native::extension_id(&new).unwrap())
+    );
+    assert_ne!(config.token, token);
+    assert_eq!(config::load(tmp.path()).unwrap().token, config.token);
+    assert!(!native::migrate_legacy_pairing(tmp.path(), &mut config, &old, &new).unwrap());
+    config.extension_id = Some("manual-extension".into());
+    let manual = config.token.clone();
+    assert!(!native::migrate_legacy_pairing(tmp.path(), &mut config, &old, &new).unwrap());
+    assert_eq!(config.token, manual);
 }

@@ -2,136 +2,101 @@
 
 Remove bot and fake followers from your X (Twitter) account. Free, open source. Detect bots, dry-run, bulk remove followers.
 
-**Remover** · A local terminal app and Chrome companion. One rule. A queue you can leave running.
+**Your follower list should be yours to manage.** Remover helps you clear inactive followers while keeping verified accounts and people you follow.
 
-[Install](#install) · [How it works](#remove-fake-followers) · [Rules](#bot-detection-rules) · [FAQ](#faq) · [Releases](https://github.com/altonwells/x-bot-follower-remover/releases)
+A local terminal app controls the work. A Chrome extension reads X through your signed-in account. Approve one cleanup pass, then let the saved queue run in the background.
 
-![Remover terminal showing the 30-day cleanup rule](docs/previews/simple-start.png)
+[Install and set up](#install-and-set-up) · [Run a cleanup](#bulk-remove-followers) · [Rules](#bot-detection-rules) · [FAQ](#faq) · [Download](https://github.com/altonwells/x-bot-follower-remover/releases)
 
-*Product previews use fictional accounts. The current preview command, `remover --demo`, makes no X requests. A live-account `--dry-run` command is not available. The code and releases are public under the MIT license.*
+![Remover terminal showing the 30-day follower cleanup rule](docs/previews/simple-start.png)
+
+*Previews use fictional accounts. The `remover --demo` command makes no X requests. A dry-run against your real followers is not available.*
 
 ## Remove fake followers
 
-Your follower list should be yours to manage. Remover helps remove inactive accounts without removing verified accounts or people you follow.
+Bought followers, fake accounts, and inactive followers can leave you with a list you no longer want. Remover gives you a clear rule and control over the work.
 
-Chrome reads X through your signed-in session. A local worker checks each follower, saves the result, and queues accounts that match your approved rule. The terminal shows progress and lets you pause, resume, or stop.
+It checks each follower and removes an account only when **all three** conditions are met:
 
-```mermaid
-flowchart LR
-    T[Terminal · control] <--> W[Local worker · saved queue]
-    W <--> C[Chrome · signed-in session]
-    C <--> X[X · read and remove followers]
-```
+- No posts, replies, or reposts in the last **30 days**.
+- **You do not follow** the account.
+- The account is **not verified**.
 
-Login data stays in Chrome. Progress stays in a local SQLite database. There is no hosted service to configure.
+These rules identify inactive followers, not proof that a person is a bot. If X does not return enough data, the account is set aside for a retry.
 
-## Install
+Login data stays in Chrome. Progress stays on your Mac. There is no hosted service or X API subscription to set up.
 
-The prebuilt release supports **Apple Silicon macOS** with **Google Chrome**. No GitHub account is required.
+## Install and set up
+
+You need an **Apple Silicon Mac**, **Google Chrome**, and an X account. No GitHub login is required.
+
+### 1. Install Remover
+
+Paste this command into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/altonwells/x-bot-follower-remover/main/install.sh | sh
 ```
 
-Open a terminal and run:
+The installer checks the download checksum. It installs in your home folder without `sudo`, Rust, or Node.
+
+### 2. Open the setup guide
 
 ```sh
 remover
 ```
 
-The installer checks the release checksum and installs into your home folder. It does not need `sudo`, Rust, Node, or Python.
+Keep the terminal open. Remover checks for the Chrome extension and shows the next step. An old pairing does not count as a live connection.
 
-**Connect Chrome once**
+![Remover onboarding guide with Chrome extension installation steps](docs/previews/onboarding.png)
 
-1. Keep `remover` open. Press Enter in the setup guide.
-2. In Chrome, enable **Developer mode**, then select **Load unpacked**.
-3. Press **Cmd+Shift+G**, paste the folder path copied by the guide, and select it.
-4. Open the extension's connection page. It pairs automatically with your terminal.
-5. Select **Open X**, sign in, and confirm the correct account in the terminal.
+### 3. Add the Chrome extension
 
-Chrome requires you to approve the unpacked extension installation. Automatic pairing does not require copying a secret.
+1. Press **Enter** in the setup guide. It opens Chrome's extension page and copies the correct folder path.
+2. Turn on **Developer mode**. Select **Load unpacked**.
+3. Press **Cmd+Shift+G**, paste the copied path, and select the folder.
+4. Open **Remover**, the extension with the **R** icon. Its connection page pairs with the terminal automatically.
+
+Chrome requires this manual installation step. You do not need to copy a pairing secret.
+
+If you need the folder path:
 
 ```text
 ~/.local/share/remover/bundle/remover-extension
 ```
 
-![Remover Chrome connection page](docs/options-preview.png)
+### 4. Connect your X account
 
-*The connection preview uses a fictional account. Pairing alone does not start cleanup.*
+Select **Open X** on the extension page. Sign in using the **same Chrome profile** where you installed Remover. Return to the terminal and confirm the account shown.
+
+![Remover Chrome extension connection page](docs/options-preview.png)
+
+**Setup does not start removal.** The terminal shows the cleanup rule after the live account check succeeds.
+
+If setup waits for Chrome, check that the R extension is enabled. Press **r** in the setup guide to check again. Chrome profile detection is a hint; only a live connection confirms that the extension is ready.
 
 ## Bulk remove followers
 
-Run `remover`, confirm your account, then press **Enter** and **y** to approve a cleanup pass.
+1. Run **`remover`** and finish setup.
+2. Press **Enter** to review the cleanup pass.
+3. Press **y** to approve it.
 
-The worker collects followers, checks activity, and removes matches one at a time. It starts in the background. Close the terminal and run `remover` later to see progress.
+The worker collects followers, checks activity, queues matches, and removes them one at a time. It saves progress as it works. You can close the terminal and run `remover` later to see progress.
 
-![Remover background queue with saved progress](docs/previews/simple-worker.png)
+![Remover background follower removal queue and progress](docs/previews/simple-worker.png)
 
-Keep Chrome open and signed in. Keep the Mac awake. A saved queue can continue over multiple days, but it cannot process requests while the computer sleeps.
+**Keep Chrome open, X signed in, and your Mac awake.** Work can continue over several days. It pauses while the Mac sleeps. In settings, you can turn on **Keep Mac awake** to prevent idle sleep; it does not guarantee operation with the lid closed.
 
-Removal uses X's `RemoveFollower` action. It reduces your followers; it does not unfollow accounts you follow. Removed accounts can follow a public account again. There is no restore-followers action.
-
-## Bot detection rules
-
-Remove an account only when **all three** are true:
-
-| Rule | Meaning |
+| Control | Action |
 | --- | --- |
-| Inactive for 30 days | No recent posts, replies, or reposts in the checked activity |
-| You do not follow them | Accounts you follow remain protected |
-| They are not verified | Verified accounts remain protected |
+| **Space** | Pause or resume the worker |
+| **`,`** | Open processing settings |
+| **Enter** | Show worker details |
+| **q** | Close the view; keep the worker running |
+| **c** | Cancel remaining work |
+| **x** | Stop the worker and save progress |
 
-Likes do not count as posting activity. A zero-post account must be at least 30 days old. Keep exceptions remain protected. Unreadable results are retried; they do not count as inactivity.
-
-These are cleanup rules, not proof that someone is a bot. Usernames, low post counts, and statistical scores do not authorize removal in this workflow.
-
-The queue reuses its saved activity result. It does not fetch activity timelines again at removal. It checks the signed-in identity, verification, and following relationship before writing. Posts made after the saved check may remain undetected.
-
-## Controls
-
-| Key | Action |
-| --- | --- |
-| Enter on the start screen | Review and start cleanup |
-| Space in the worker view | Pause or resume |
-| `,` | Processing settings |
-| Enter in the worker view | Details |
-| `q` in the worker view | Close the view; keep working |
-| `c` | Cancel remaining work |
-| `x` | Stop the worker and save progress |
-
-After a pass completes or is cancelled, Enter can approve another pass.
-Older approved queues retain their old rules and controls until finished or cancelled.
-`remover --demo` retains the fictional inventory and pouring-animation preview.
-
-## Processing settings
-
-Choose a field with ↑/↓ and change it with ←/→. Enter or Esc saves.
-Shift+R restores the recommended starting configuration:
-
-| Setting | Starting value |
-| --- | --- |
-| Removal interval | 60 seconds |
-| Attempts per batch | 20 |
-| Rest between batches | 5 minutes |
-| Hourly attempt limit | 50 |
-| Keep Mac awake | Off; enable when wanted |
-
-Settings apply to the current job without changing its removal rule.
-Active cooldowns finish first. X response limits can extend the wait.
-These are local defaults, not X quotas or a completion guarantee.
-Read requests in the new flow are spaced by at least one second; endpoint backoff can increase that interval.
-
-## Background work and recovery
-
-Progress, retry deadlines, batch rests, and removal receipts survive restarts.
-A normal Chrome reconnect resumes the same approved account. A manual pause stays paused.
-After restarting the Mac or worker, run `remover` to restore the saved job. Automatic launch at login is not configured.
-No requests run while the Mac sleeps. The optional awake setting prevents idle sleep while the job runs; it does not guarantee operation with the lid closed.
-
-Unreadable accounts are retried after 1 minute, 15 minutes, and 6 hours. After four failures they remain set aside for a later pass.
-Other accounts continue. Uncertain removals are recorded, then checked through the follower relationship before that target can be retried.
-An absent follower closes the old attempt. A present follower can receive a bounded new attempt under the approved rule. Unresolved writes are never blindly repeated.
-Login failures, account changes, and access denials pause the job.
+You can also control it from another terminal:
 
 ```sh
 remover status
@@ -140,58 +105,94 @@ remover resume
 remover stop
 ```
 
-## Update
+After a restart, run `remover` to restore a saved job. It does not start at login. A manual pause stays paused. A completed or cancelled pass needs new approval.
 
-Run the install command again, reload the extension in `chrome://extensions`, and restart the terminal app. Stop a running worker with `remover stop` before updating.
+Removal reduces your follower count. It does not unfollow accounts you follow. There is no restore-followers action. A removed account can follow you again if your account is public.
 
-**Upgrading from the former name:** stop the old worker with `forgive-me stop`. The new command is `remover`. Load the new extension folder above, then disable the old extension. Because Chrome derives an unpacked extension's identity from its folder, run `remover pair --reset` with the app closed, then reopen `remover` to pair.
+### Processing speed
 
-Existing cleanup data stays in its original `forgive-me` data directory when present. The app reuses the same database and process lock. Fresh installs use `remover`. Do not delete the old data folder.
+Press **`,`** to open settings. Use **↑/↓** to choose a field and **←/→** to change it. **Enter** saves. **Shift+R** restores the starting settings.
+
+| Setting | Starting value |
+| --- | --- |
+| Time between removals | 60 seconds |
+| Attempts per batch | 20 |
+| Rest between batches | 5 minutes |
+| Hourly attempt limit | 50 |
+| Keep Mac awake | Off |
+
+X response limits can add longer waits. Current cooldowns finish before new speed settings take effect. These settings are local controls, not X quotas or a guaranteed completion time.
+
+## Bot detection rules
+
+The standard pass uses the **30-day inactivity rule**, plus protection for verified accounts and people you follow. Accounts marked to keep remain protected.
+
+Posts, replies, and reposts count as activity. Likes do not. A zero-post account must be at least 30 days old. A suspicious username or a low post count alone does not authorize removal.
+
+Activity results are saved and reused at removal. The extension checks the signed-in identity, verification, and following relationship before it removes an account. A post made after the saved activity check may remain undetected.
+
+Unreadable results are retried after 1 minute, 15 minutes, and 6 hours. After four failures, the account is set aside for a later pass. Other accounts continue. If a removal result is uncertain, the worker checks the follower relationship before another attempt.
+
+## Update Remover
+
+Stop the worker before updating:
+
+```sh
+remover stop
+```
+
+Run the install command again. Reload the R extension at `chrome://extensions`, then run `remover`.
+
+**Moving from `forgive-me`?** Stop the old worker with `forgive-me stop`. Load the new extension folder shown above and disable the old extension. Remover repairs the old default pairing automatically and keeps your saved data. Do not delete the old data folder. A custom installation may need `remover pair --reset` while the app is closed.
 
 ## Why bots follow you
 
-Spam operators may follow accounts to attract attention, make accounts appear active, or inflate follower counts. X describes fake engagement and coordinated account abuse in its [authenticity policy](https://help.x.com/en/rules-and-policies/authenticity).
+Spam operators may follow accounts to attract attention, make accounts look active, or inflate follower counts. X describes fake engagement and coordinated account abuse in its [authenticity policy](https://help.x.com/en/rules-and-policies/authenticity).
 
-A follower's motive cannot be established from a username or a quiet timeline. Remover applies your stated cleanup rule and keeps the evidence visible.
+A quiet timeline does not prove that an account is fake. Remover helps you apply a clear follower cleanup rule instead of guessing from a username.
 
 ## FAQ
 
 **Does X notify the removed follower?**
 
-Remover sends no message to the account. X documents [removing a follower](https://help.x.com/en/using-x/following-faqs), but that page does not promise a notification policy for removal. A person can still notice the changed relationship or follow you again.
+Remover sends no message. X documents [removing a follower](https://help.x.com/en/using-x/following-faqs), but that page does not promise a notification policy for removal. The person can still notice the change or follow you again.
 
-**Can I bulk remove?**
+**Can I bulk remove followers?**
 
-Yes. Approve a pass once. The worker queues matching accounts and processes them individually, with saved progress and pause controls.
+Yes. Approve one pass. Remover queues matching followers and removes them individually. You can pause, resume, or stop the queue.
 
-**Is it safe / will I hit rate limits?**
+**Is it safe? Will I hit rate limits?**
 
-Rate limits and account restrictions are possible. There is no ban immunity or guaranteed daily allowance. Local pacing, batch rests, and response-based cooldowns reduce request pressure; they do not override X's limits. Start with the recommended configuration. See [X's automation rules](https://help.x.com/en/rules-and-policies/x-automation).
+Rate limits and account restrictions are possible. There is no guaranteed safe daily allowance. Remover spaces requests, rests between batches, and waits when X reports limits. Those controls do not override [X's automation rules](https://help.x.com/en/rules-and-policies/x-automation).
 
 **Does it work on mobile?**
 
-No. This release needs an Apple Silicon Mac and desktop Chrome. There is no mobile controller or hosted worker.
+No. This release needs an Apple Silicon Mac and desktop Google Chrome.
 
-**Can I preview without removing anyone?**
+**Can I try it without removing followers?**
 
-`remover --demo` shows fictional accounts and makes no X requests. It is not a live-account dry run. Pairing and viewing setup do not approve removal; starting a cleanup pass does.
+Run `remover --demo` to explore the interface with fictional accounts. It makes no X requests. This is not a dry-run against your real follower list. Pairing alone does not approve removal.
+
+**Can it run while the terminal is closed?**
+
+Yes. The worker continues after you close the terminal. Keep Chrome signed in and the Mac awake. Run `remover` again to see progress.
 
 ## Compared to other tools
 
-This table describes documented approaches, not a live reliability benchmark. Project status and X compatibility can change.
+These are documented approaches, not a live reliability test. X compatibility can change.
 
-| Tool | Approach | Main distinction |
+| Tool | Approach | Main difference |
 | --- | --- | --- |
 | [xbotremover](https://github.com/vanrohan/xbotremover) | Browser extension with adjustable rules | Documents live dry-run support and Chrome/Firefox builds |
-| [x-bot-sweeper](https://github.com/sleeyax/x-bot-sweeper) | Semi-automatic identification and blocking | Repository archived; maintainer cites changing X endpoints |
-| [x-bot-cleaner](https://github.com/iuzn/x-bot-cleaner) | Manually mark accounts Real/Bot, then bulk remove | Classification happens in the browser |
-| x-follower-cleaner — earlier local fork of [X-Cleaner](https://github.com/taqui-786/X-Cleaner---Followers-Following) | Browser-side follower/following cleanup | The earlier extension approach, before this terminal and worker implementation |
-| **[This project](https://github.com/altonwells/x-bot-follower-remover)** | **`remover` terminal + Chrome + saved local queue** | **One 30-day rule; background progress, retry recovery, and processing controls** |
+| [x-bot-sweeper](https://github.com/sleeyax/x-bot-sweeper) | Semi-automatic identification and blocking | Archived; maintainer cites changing X endpoints |
+| [x-bot-cleaner](https://github.com/iuzn/x-bot-cleaner) | Mark accounts Real/Bot, then bulk remove | Classification happens in the browser |
+| x-follower-cleaner, the earlier local [X-Cleaner](https://github.com/taqui-786/X-Cleaner---Followers-Following) fork | Browser-side follower and following cleanup | Earlier extension approach before this terminal and worker |
+| **[Remover](https://github.com/altonwells/x-bot-follower-remover)** | **Terminal + Chrome extension + saved local queue** | **One 30-day rule, background progress, retries, and pause controls** |
 
-## Development and license
+## Free and open source
 
-[Build guide](docs/DEVELOPMENT.md) · [Operation guide](docs/GUIDE.md) · [Verification record](docs/VERIFICATION.md) · [Protocol](protocol/README.md) · [Changelog](CHANGELOG.md)
+Remover is public under the **[MIT license](LICENSE)**.
 
-Automated checks use synthetic X responses and isolated local workers. These checks do not establish live multi-day reliability.
+[Build guide](docs/DEVELOPMENT.md) · [Operation guide](docs/GUIDE.md) · [Verification record](docs/VERIFICATION.md) · [Protocol](protocol/README.md)
 
-[MIT license](LICENSE). [Third-party notices](THIRD_PARTY_NOTICES.md).
+Automated tests use synthetic X responses and isolated workers. They do not establish live reliability over multiple days.

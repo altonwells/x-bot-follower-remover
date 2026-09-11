@@ -250,9 +250,14 @@ pub async fn run(mut app: App, mut events: mpsc::Receiver<BridgeEvent>, dir: &Pa
             event = events.recv() => match event {
                 Some(event) => {
                     if matches!(&event, BridgeEvent::Connected { .. } | BridgeEvent::Disconnected(_)) { identity_retry = false; }
+                    if matches!(&event, BridgeEvent::Message(crate::protocol::ClientMessage::XPageReady { .. })) && app.sender.is_some() && app.handle.is_empty() {
+                        identity_retry = true;
+                    }
                     if let BridgeEvent::Message(crate::protocol::ClientMessage::Result { result, .. }) = &event
                         && app.pending.as_ref().is_some_and(|w| matches!(w.command, crate::protocol::Command::GetSession)) {
-                        identity_retry = matches!(result, crate::protocol::WorkResult::Error { code, .. } if matches!(code.as_str(), "rate_limited" | "network_unavailable"));
+                        identity_retry = matches!(result, crate::protocol::WorkResult::Error { code, .. }
+                            if matches!(code.as_str(), "rate_limited" | "network_unavailable")
+                                || (identity_retry && !matches!(code.as_str(), "access_denied" | "account_changed")));
                     }
                     let identified = matches!(&event, BridgeEvent::Message(crate::protocol::ClientMessage::Result { result: crate::protocol::WorkResult::Session { .. }, .. }));
                     let result = app.bridge_event(event).await;
@@ -292,7 +297,7 @@ pub async fn run(mut app: App, mut events: mpsc::Receiver<BridgeEvent>, dir: &Pa
                 result
             },
             _ = tick.tick() => {
-                if automatic && identity_retry && app.sender.is_some() && app.pending.is_none() && app.pacing.until_ms <= now_ms() {
+                if identity_retry && app.sender.is_some() && app.handle.is_empty() && app.pending.is_none() && app.pacing.until_ms <= now_ms() {
                     identity_retry = false; app.check_session().await
                 } else { app.tick().await }
             },

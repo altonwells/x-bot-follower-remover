@@ -10,7 +10,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
-use std::path::PathBuf;
+use serde_json::Value;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -20,8 +24,97 @@ pub enum Step {
     Ready,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Installation {
+    NotFound,
+    Found(String),
+    LegacyOnly,
+    Unknown,
+}
+
+/// Chrome's profile files are a best-effort installation hint, never proof of connection.
+/// Only extension registrations are inspected; credentials are neither retained nor logged.
+pub fn detect_installation(root: &Path, extension: &Path) -> Installation {
+    let Ok(profiles) = fs::read_dir(root) else {
+        return Installation::Unknown;
+    };
+    let expected = crate::native::extension_id(extension).ok();
+    let mut readable = false;
+    let mut uncertain = false;
+    let mut legacy = false;
+    for profile in profiles.flatten() {
+        let name = profile.file_name().to_string_lossy().into_owned();
+        if name != "Default" && !name.starts_with("Profile ") {
+            continue;
+        }
+        for file in ["Secure Preferences", "Preferences"] {
+            let bytes = match fs::read(profile.path().join(file)) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    uncertain |= error.kind() != std::io::ErrorKind::NotFound;
+                    continue;
+                }
+            };
+            let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+                uncertain = true;
+                continue;
+            };
+            readable = true;
+            let Some(settings) = value
+                .pointer("/extensions/settings")
+                .and_then(Value::as_object)
+            else {
+                continue;
+            };
+            for (id, entry) in settings {
+                let path = entry
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if expected.as_ref() == Some(id) || Path::new(path) == extension {
+                    return Installation::Found(name);
+                }
+                legacy |= path.ends_with("/forgive-me-extension");
+            }
+        }
+    }
+    if uncertain {
+        Installation::Unknown
+    } else if legacy {
+        Installation::LegacyOnly
+    } else if readable {
+        Installation::NotFound
+    } else {
+        Installation::Unknown
+    }
+}
+
+pub fn installed_extension(extension: &Path) -> Installation {
+    let Some(home) = dirs::home_dir() else {
+        return Installation::Unknown;
+    };
+    if !cfg!(target_os = "macos") {
+        return Installation::Unknown;
+    }
+    detect_installation(
+        &home.join("Library/Application Support/Google/Chrome"),
+        extension,
+    )
+}
+
+pub async fn open_install(extension: &Path) -> Result<()> {
+    copy(extension.display().to_string()).await?;
+    open_chrome("chrome://extensions".into()).await
+}
+
+pub async fn open_options(extension: &Path) -> Result<()> {
+    let id = crate::native::extension_id(extension)?;
+    open_chrome(format!("chrome-extension://{id}/options.html")).await
+}
+
 pub struct Setup {
     pub step: Step,
+    pub installation: Installation,
     pub port: u16,
     pub token: String,
     pub extension_dir: PathBuf,
@@ -35,11 +128,8 @@ pub struct Setup {
 impl Setup {
     pub fn new(config: &Config) -> Self {
         Self {
-            step: if config.extension_id.is_some() {
-                Step::Pair
-            } else {
-                Step::Install
-            },
+            installation: Installation::Unknown,
+            step: Step::Install,
             port: config.port,
             token: config.token.clone(),
             extension_dir: extension_dir(),
@@ -49,6 +139,17 @@ impl Setup {
             recheck_requested: false,
             account_error: None,
             retry_at_ms: None,
+        }
+    }
+    pub fn refresh_installation(&mut self) {
+        self.installation = installed_extension(&self.extension_dir);
+        if matches!(
+            self.installation,
+            Installation::NotFound | Installation::LegacyOnly
+        ) {
+            self.go(Step::Install);
+        } else if matches!(self.installation, Installation::Found(_)) {
+            self.go(Step::Pair);
         }
     }
     pub fn go(&mut self, step: Step) {
@@ -128,7 +229,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let area = centered(
         frame.area(),
         frame.area().width.saturating_sub(4).min(82),
-        23,
+        27,
     );
     let [header, status, body, action, keys, notice] = Layout::vertical([
         Constraint::Length(if compact { 1 } else { 3 }),
@@ -159,7 +260,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             }
         )
     } else {
-        "○ Chrome not connected".into()
+        match &setup.installation {
+            Installation::Found(profile) => {
+                format!("○ Extension listed in {profile}; not connected")
+            }
+            Installation::NotFound => "○ Chrome extension not installed".into(),
+            Installation::LegacyOnly => "○ Only the old extension was found".into(),
+            Installation::Unknown => "○ Chrome not connected; installation not confirmed".into(),
+        }
     };
     let account = if ready {
         format!("✓ @{}", app.handle)
@@ -215,7 +323,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         (
             " Confirm your account ",
             format!(
-                "Connected as @{}\n\nIs this the account you want to clean?\nContinue to review your followers. Nothing runs yet.",
+                "Connected as @{}\n\nIs this the account you want to clean?\nContinue to review the cleanup rule. Nothing runs yet.",
                 app.handle
             ),
             "Enter  Use this account",
@@ -239,11 +347,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             "Enter  Open X", "r recheck account  m repair  q quit")
         }
     } else if setup.step == Step::Install {
-        (" Add the Chrome extension ", "Press Enter to open Chrome and copy the folder path.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n\nPairing starts when the extension loads.".into(),
-        "Enter  Set up Chrome", "o already installed  m manual  q quit")
+        (
+            " Add the Chrome extension ",
+            format!(
+                "{}Press Enter to open Chrome and copy the folder path.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n3. Open Remover, then Open X in the same profile.\n\nPairing starts when the extension loads.",
+                if setup.installation == Installation::LegacyOnly {
+                    "The old extension cannot connect. Install the new R icon.\n\n"
+                } else {
+                    ""
+                }
+            ),
+            "Enter  Set up Chrome",
+            "r check again  o installed  m manual  q quit",
+        )
     } else {
-        (" Connect your extension ", "Open the extension and select Connect terminal.\nKeep this terminal running.\n\nNeed to install or update it? Press i to open Chrome's\nextension page, then Load unpacked or Reload.\n\nThis screen advances when Chrome connects.".into(),
-        "Enter  Open extension", "i install / reload  m manual  q quit")
+        (" Connect your extension ", "Open the extension and select Connect terminal.\nKeep this terminal running.\n\nIf disabled, enable Remover on chrome://extensions.\nPress i to install or reload it. Use the same Chrome\nprofile for the extension and X.\n\nThis screen advances when Chrome connects.".into(),
+        "Enter  Open extension", "i install / reload  r check again  m manual  q quit")
     };
     let block = theme::panel(title).border_style(fg(ICE));
     let inner = block.inner(body);

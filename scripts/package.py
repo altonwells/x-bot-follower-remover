@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='remover-package-') as temporary:
     shutil.copyfile(root / 'target/release/remover', bundle / 'remover')
     (bundle / 'remover').chmod(0o755)
     shutil.copytree(root / 'extension/dist', bundle / 'remover-extension', copy_function=shutil.copyfile)
-    for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh']:
+    for name in ['README.md', 'LICENSE', 'install.sh']:
         shutil.copyfile(root / name, bundle / name)
     for name in ['docs', 'protocol']:
         shutil.copytree(root / name, bundle / name, copy_function=shutil.copyfile)
@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='remover-package-') as temporary:
             pending.chmod(0o755)
         pending.replace(dist / path.name)
     (dist / 'SHA256SUMS').write_text(checksums)
-    for name in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'install.sh', 'DEPENDENCY_LICENSES.md']:
+    for name in ['README.md', 'LICENSE', 'install.sh', 'DEPENDENCY_LICENSES.md']:
         shutil.copyfile(bundle / name, dist / name)
     for name in ['docs', 'protocol', 'remover-extension']:
         shutil.copytree(bundle / name, dist / name, dirs_exist_ok=True, copy_function=shutil.copyfile)

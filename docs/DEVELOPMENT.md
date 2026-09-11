@@ -114,3 +114,9 @@ swift scripts/render-preview.swift /tmp/remover-preview.json /tmp/remover-previe
 
 The app removes followers. It uses the accounts you follow to protect those relationships.
 It does not include unfollow, hard-block, automatic launch at login, continuous account monitoring, or a multiple-account interface.
+
+## Licenses
+
+The application uses the MIT license. The signing implementation in `extension/src/transaction.ts` includes a numerical protocol port from twscrape, which credits XClientTransaction. Their copyright and MIT license notices remain in [the extension license file](../extension/THIRD_PARTY_LICENSES.txt) and each extension build.
+
+Release bundles include `DEPENDENCY_LICENSES.md` and a `licenses/` folder with Cargo dependency license files. Development package versions and their license terms are recorded in the lock files. Reference clones are not included in release bundles.

@@ -150,7 +150,7 @@ impl App {
             session: String::new(),
             pending: None,
             next_at: Instant::now(),
-            notice: "Open Chrome, pair the extension, then press s to scan. ? shows help.".into(),
+            notice: "Connect Chrome to get started.".into(),
             capabilities: vec![],
             removed,
             uncertain,
@@ -167,7 +167,7 @@ impl App {
     }
     pub fn configure_setup(&mut self, config: &crate::config::Config) {
         self.setup = Some(Setup::new(config));
-        if config.extension_id.is_none() || self.owner.is_empty() {
+        if !self.demo && (self.sender.is_none() || self.handle.is_empty()) {
             self.mode = Mode::Setup;
             self.log("Welcome. Let's connect your Chrome extension.");
         }
@@ -410,6 +410,15 @@ impl App {
             return self.setup_key(key).await;
         }
         if self.mode == Mode::Browse && self.policy.simple_cleanup {
+            if !self.demo && (self.sender.is_none() || self.handle.is_empty()) {
+                if self.setup.is_some() {
+                    self.mode = Mode::Setup;
+                }
+                if !matches!(key.code, KeyCode::Char('q' | ',' | 'P')) {
+                    self.log("Connect Chrome and confirm your X account before starting cleanup.");
+                    return Ok(());
+                }
+            }
             match key.code {
                 KeyCode::Enter if self.auto_policy.is_none() && self.batch.is_none() => {
                     self.mode = Mode::AutoConfirm;
@@ -819,13 +828,11 @@ impl App {
             }
             KeyCode::Char('i') if self.sender.is_none() => {
                 setup.go(Step::Install);
-                crate::setup::copy(setup.extension_dir.display().to_string()).await?;
-                crate::setup::open_chrome("chrome://extensions".into()).await?;
+                crate::setup::open_install(&setup.extension_dir).await?;
                 self.log("Folder copied. In Chrome, Load unpacked or Reload remover. Waiting for connection.");
             }
             KeyCode::Char('o') => {
-                let id = crate::native::extension_id(&setup.extension_dir)?;
-                crate::setup::open_chrome(format!("chrome-extension://{id}/options.html")).await?;
+                crate::setup::open_options(&setup.extension_dir).await?;
                 if !setup.manual && self.sender.is_none() {
                     setup.go(Step::Pair);
                 }
@@ -849,7 +856,11 @@ impl App {
                     && key.code == KeyCode::Enter
                 {
                     self.mode = Mode::Browse;
-                    self.log("Account confirmed. Press s to scan your followers.");
+                    self.log(if self.policy.simple_cleanup {
+                        "Account confirmed. Enter reviews the cleanup rule; y approves it."
+                    } else {
+                        "Account confirmed. Press s to scan your followers."
+                    });
                 } else if self.sender.is_some()
                     && setup.account_error.is_some()
                     && key.code == KeyCode::Enter
@@ -861,13 +872,10 @@ impl App {
                         self.log("Sign in to X. The extension checks again when the page loads.");
                     }
                 } else if setup.step == Step::Install {
-                    crate::setup::copy(setup.extension_dir.display().to_string()).await?;
-                    crate::setup::open_chrome("chrome://extensions".into()).await?;
+                    crate::setup::open_install(&setup.extension_dir).await?;
                     self.log("Folder copied. Load unpacked in Chrome. Waiting for the extension to connect.");
                 } else {
-                    let id = crate::native::extension_id(&setup.extension_dir)?;
-                    crate::setup::open_chrome(format!("chrome-extension://{id}/options.html"))
-                        .await?;
+                    crate::setup::open_options(&setup.extension_dir).await?;
                     self.log("Select Connect terminal in the extension. Waiting for connection.");
                 }
             }
@@ -884,6 +892,10 @@ impl App {
                 setup.scroll = setup.scroll.saturating_add(1).min(40)
             }
             KeyCode::Up | KeyCode::PageUp => setup.scroll = setup.scroll.saturating_sub(1),
+            KeyCode::Char('r') if self.sender.is_none() => {
+                setup.refresh_installation();
+                self.log("Chrome installation checked. Follow the setup steps above.");
+            }
             KeyCode::Char('r') if self.sender.is_some() && self.pending.is_none() => {
                 self.check_session().await?;
             }
@@ -1125,8 +1137,9 @@ impl App {
                 self.check_session().await?;
             }
             BridgeEvent::Disconnected(message) => {
-                if self.mode == Mode::Setup {
-                    self.setup.as_mut().unwrap().go(Step::Pair);
+                if let Some(setup) = &mut self.setup {
+                    setup.go(Step::Pair);
+                    self.mode = Mode::Setup;
                 } else {
                     self.mode = Mode::Browse;
                 }

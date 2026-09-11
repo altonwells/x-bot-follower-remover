@@ -85,7 +85,14 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
             body,
         );
         frame.render_widget(
-            Paragraph::new("Enter Start cleanup    , Settings    q Quit").style(bold(MINT)),
+            Paragraph::new(
+                if !app.demo && (app.sender.is_none() || app.handle.is_empty()) {
+                    "Connect Chrome first    Shift+P Setup    q Quit"
+                } else {
+                    "Enter Start cleanup    , Settings    q Quit"
+                },
+            )
+            .style(bold(MINT)),
             footer,
         );
         render_modal(frame, app);
@@ -1212,27 +1219,25 @@ pub fn render_worker(
         .wrap(Wrap { trim: false }),
         summary,
     );
-    let mut lines = vec![Line::styled(
-        format!("{:24} {:16} {}", "ACCOUNT", "LAST ACTIVITY", "STATUS"),
-        fg(MUTED),
-    )];
-    for (handle, date, status) in &state.rows {
-        lines.push(Line::styled(
-            format!(
-                "@{:<23} {:16} {}",
-                clean(handle),
-                clean(date),
-                clean(status)
+    let mut lines = if state.state == "Waiting for Chrome" {
+        vec![
+            Line::styled("Connect Chrome to continue", bold(MINT)),
+            Line::from(""),
+            Line::from("Your saved queue is waiting. No X requests can run while disconnected."),
+            Line::from(""),
+            Line::from("1. Press i to open Chrome and copy the extension folder."),
+            Line::from("2. Enable Developer mode. Select Load unpacked."),
+            Line::from("3. Press Cmd+Shift+G, paste the folder, and select it."),
+            Line::from("4. Open Remover (R icon), then Connect terminal."),
+            Line::from("5. Open X in the same Chrome profile and sign in."),
+            Line::from(""),
+            Line::from("Already installed? Press o to open its connection page."),
+            Line::from(
+                "The existing approved job resumes after connection; manual pauses stay paused.",
             ),
-            if status == "Working" {
-                bold(MINT)
-            } else {
-                fg(TEXT)
-            },
-        ));
-    }
-    if details {
-        lines = vec![
+        ]
+    } else if details {
+        vec![
             Line::from("This worker continues when the terminal closes."),
             Line::from("Chrome must stay signed in. The Mac must be awake."),
             Line::from(format!(
@@ -1251,15 +1256,49 @@ pub fn render_worker(
                 "Activity is checked once near removal. Saved approval does not expire mid-queue.",
             ),
             Line::from("c cancels the job. x stops the worker and saves progress."),
-        ];
+        ]
+    } else {
+        let mut lines = vec![Line::styled(
+            format!("{:24} {:16} {}", "ACCOUNT", "LAST ACTIVITY", "STATUS"),
+            fg(MUTED),
+        )];
+        for (handle, date, status) in &state.rows {
+            lines.push(Line::styled(
+                format!(
+                    "@{:<23} {:16} {}",
+                    clean(handle),
+                    clean(date),
+                    clean(status)
+                ),
+                if status == "Working" {
+                    bold(MINT)
+                } else {
+                    fg(TEXT)
+                },
+            ));
+        }
+        lines
+    };
+    if state.state == "Checking account" {
+        lines.insert(
+            0,
+            Line::styled(
+                "Open X and sign in (b). Open connection help with o.",
+                fg(ICE),
+            ),
+        );
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
     frame.render_widget(
-        Paragraph::new(if state.state == "No queued work" {
-            "Enter Start cleanup    , Settings    q Close view"
-        } else {
-            "Space Pause/Resume    , Settings    Enter Details    q Close view"
-        })
+        Paragraph::new(
+            if state.state == "Waiting for Chrome" || state.state == "Checking account" {
+                "i Set up Chrome    o Connection    b Open X    q Close view"
+            } else if state.state == "No queued work" {
+                "Enter Start cleanup    , Settings    q Close view"
+            } else {
+                "Space Pause/Resume    , Settings    Enter Details    q Close view"
+            },
+        )
         .style(bold(MINT))
         .wrap(Wrap { trim: false }),
         footer,

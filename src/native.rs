@@ -17,12 +17,36 @@ pub const HOST: &str = "com.x_bot_follower_remover.pairing";
 /// The packaged extension has no manifest key; Chrome uses its absolute path.
 pub fn extension_id(path: &Path) -> Result<String> {
     let absolute = path.canonicalize()?;
-    let path = absolute.to_str().context("Extension path must be UTF-8")?;
+    path_id(&absolute)
+}
+fn path_id(path: &Path) -> Result<String> {
+    let path = path.to_str().context("Extension path must be UTF-8")?;
     Ok(Sha256::digest(path.as_bytes())[..16]
         .iter()
         .flat_map(|b| [char::from(b'a' + (b >> 4)), char::from(b'a' + (b & 15))])
         .collect())
 }
+/// Repair only the known former bundled identity, not arbitrary manual pairings.
+/// The caller must hold the data-directory lock before changing credentials.
+pub fn migrate_legacy_pairing(
+    data: &Path,
+    settings: &mut config::Config,
+    legacy: &Path,
+    current: &Path,
+) -> Result<bool> {
+    if settings.extension_id.as_deref() != Some(path_id(legacy)?.as_str()) {
+        return Ok(false);
+    }
+    let expected = extension_id(current)?;
+    if settings.extension_id.as_deref() == Some(expected.as_str()) {
+        return Ok(false);
+    }
+    settings.token = new_id();
+    settings.extension_id = Some(expected);
+    config::save(data, settings)?;
+    Ok(true)
+}
+
 fn host_dir() -> Result<PathBuf> {
     ensure!(
         cfg!(target_os = "macos"),
