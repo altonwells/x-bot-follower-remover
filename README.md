@@ -18,12 +18,12 @@ The app separates the work into four steps:
 4. **Remove.** You approve the queue. The extension checks each target again and removes one follower at a time. The controller can run in the background.
 
 X login data stays in Chrome. The app stores account data and progress on your computer.
-If required data is unknown, the default rules exclude the account.
+Unknown identity, verification, or relationship data excludes the account. Sparse accounts with old observed posts can qualify with incomplete timeline coverage.
 The app does not repeat a removal automatically after an uncertain result.
 
 ## What you can do
 
-- Find inactive followers and accounts with no current posts.
+- Find inactive followers, empty accounts, and sparse accounts with old observed posts.
 - Exclude verified accounts and accounts you follow.
 - Keep specific accounts, even when they meet your removal rules.
 - Search the collected followers and examine account details.
@@ -105,14 +105,14 @@ Keep Chrome open and your Mac awake during work.
 
 1. Press `s` to collect the accounts you follow and your followers. Collection stops before activity checks.
 2. Press `f` to choose removal rules, then Enter to save. **REMOVE** rules identify candidates. **PROTECT** rules exclude accounts from removal.
-3. Press `i` to check activity from the top in handle order. The list shows the current check and follows each account. This checks all collected followers and clears the view filter. Unknown evidence stays protected.
+3. Press `i` to check activity from the top in handle order. The list shows the current check and follows each account. This checks all collected followers and clears the view filter. REVIEW means incomplete evidence; KEEP means a protection or recent activity.
 4. Press `m` to switch between all followers and removal candidates. This changes only the view.
 5. Press Enter for evidence, or `K` to keep an account.
 6. Press `a` to select checked candidates in the current view. Use **Shift+A** to select by basic rules before activity checks finish, or Space to select one.
-7. Press `d` to review the full queue, then `y` to approve. New queues run in handle order. Each account must pass all rules, including a fresh activity check, before removal. Others are skipped.
+7. Press `d` to review the full queue, then `y` to approve. New queues run in handle order. Only accounts cleared by the activity step enter the queue. Removal uses those saved results and does not scan activity again. Identity and relationship protections are still checked.
 8. Press `b` to move the approved queue to the background. The current task finishes before handoff.
 
-Basic selection applies the verification and following rules plus the keep list and account protections. It does not require completed activity evidence. Selected accounts that need to pass activity rules show **CHECK FIRST**. It replaces the selection with matches in the current view.
+Basic selection applies the verification and following rules plus the keep list and account protections. It does not require completed activity evidence. Selected accounts that still need activity clearance show **CHECK FIRST** and cannot enter the removal queue. It replaces the selection with matches in the current view.
 
 **Enter, `n`, or Esc cancels the removal confirmation.**
 
@@ -125,12 +125,18 @@ An account must meet all these conditions:
 - It is unverified, including blue verification.
 - It is public.
 - It is not on your keep list.
-- Recent data shows no visible post activity within 90 days, or shows zero current posts.
+- The activity step found complete inactivity for 90 days, zero current posts, or at most five posts with the newest observed activity at least 90 days old.
+
+The sparse + old rule can qualify an account with incomplete timeline coverage. It does not claim confirmed inactivity. Use `f` to adjust the post limit (0 disables this rule). Existing approved queues retain their original rules.
+
+The evidence panel shows the post-count percentile and log-scale z-score among collected followers with known counts (at least 30). A z-score of −2 or lower is marked LOW OUTLIER. These are review signals, not bot probabilities or independent removal rules. Numeric handles are only a weak signal.
+
+Activity results expire after 24 hours. If a queue reaches expired or missing evidence, it pauses for a new activity review; it never performs a hidden activity rescan. Activity that changes after the saved check may not be detected before removal.
 
 Post activity includes posts, replies, and reposts. Inactivity does not prove that an account is a bot.
 Zero current posts does not mean the account never posted.
 
-New installations use a minimum interval of 60 seconds and an hourly budget of 50 removal attempts. Existing saved settings are preserved. The full selected queue is approved at once; the hourly budget limits execution, not selection. Pre-check attempts count toward that local budget too.
+New installations use a minimum interval of 60 seconds and an hourly budget of 50 removal attempts. Existing saved settings are preserved. The full selected queue is approved at once; the hourly budget limits execution, not selection. Attempts that stop at identity or relationship checks count toward that local budget too.
 
 X reset times and Retry-After headers can extend the wait. Cooldowns and attempt budgets survive process restarts. A transient read or rate limit before dispatch keeps the target queued. Authentication failures and uncertain writes stop work. The app does not promise a fixed completion time or immunity from X restrictions.
 
@@ -161,7 +167,7 @@ Chrome must stay open and signed in to the approved account. The Mac must stay a
 | Enter | Open account details |
 | Space | Select or deselect one account by basic rules |
 | `a` | Select checked removal candidates in the current view |
-| **Shift+A** | Select basic matches in this view; check activity before removal |
+| **Shift+A** | Select basic matches in this view; check activity before queueing |
 | `v` | Switch the running queue between list and animation |
 | `K` | Add or remove a keep exception |
 | `f` | Change the removal rules |
@@ -210,7 +216,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.9 passed automated, terminal, and installer tests.
+Version 0.1.10 passed automated, terminal, and installer tests.
 The user confirmed the preceding X connection fix after loading the updated extension. The new background workflow has automated coverage; it has not run a live overnight removal test.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).

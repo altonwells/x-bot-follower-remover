@@ -279,6 +279,8 @@ export class XClient {
     const capabilities = [
       "adapter:2",
       "durable_queue:1",
+      "sparse_policy:1",
+      "saved_activity:1",
       "session",
       "inspect_account",
       "relationship",
@@ -574,7 +576,10 @@ export class XClient {
           cutoff,
           op === "UserRepostsTimeline",
         );
-        evidence.push(part);
+        evidence.push({
+          ...part,
+          channel: op.replace("User", "").replace("Timeline", ""),
+        });
         // One recent action is sufficient to protect the account.
         if (part.latest !== null && part.latest > cutoff) break;
       }
@@ -593,7 +598,12 @@ export class XClient {
         ? "Recent post, reply or repost observed."
         : account.coverage_since_ms !== null
           ? "Posts, replies and reposts all predate the cutoff."
-          : "One or more activity timelines lack adequate evidence; kept unknown.";
+          : `Incomplete coverage: ${evidence
+              .filter((e) => e.coverage === null)
+              .map((e) => e.channel)
+              .join(
+                ", ",
+              )}. Observed dates do not prove full inactivity; sparse + old rule may still qualify.`;
     } else if (this.templates.UserTweetsAndReplies) {
       this.assertRead(epoch);
       const raw = await this.graphql("UserTweetsAndReplies", {
@@ -624,8 +634,18 @@ export class XClient {
     policy: Policy,
     guard: () => void,
     beforeWrite: () => Promise<void>,
+    approved?: Account,
   ): Promise<Result> {
-    const account = await this.inspect(owner, id, policy);
+    if (!approved || approved.id !== id || !eligible(approved, policy))
+      throw new XError(
+        "activity_review_required",
+        "Saved activity is missing, expired or not eligible. Check activity in the TUI and approve a new queue.",
+      );
+    await this.assertOwner(owner);
+    guard();
+    const account = await this.profile(id);
+    Object.assign(account, await this.relationship(id, account));
+    await this.assertOwner(owner);
     guard();
     if (account.follows_me === false)
       return {
@@ -634,12 +654,23 @@ export class XClient {
         status: "already_absent",
         message: "This account no longer follows you.",
       };
-    if (!eligible(account, policy))
+    if (
+      !eligible(
+        {
+          ...approved,
+          follows_me: account.follows_me,
+          i_follow: account.i_follow,
+          verified: account.verified,
+          protected: account.protected,
+        },
+        policy,
+      )
+    )
       return {
         kind: "action",
         target_id: id,
         status: "skipped",
-        message: "Fresh evidence no longer meets the approved cleanup policy.",
+        message: "Current account protections no longer permit removal.",
       };
     const t = this.template("RemoveFollower");
     let dispatched = false;

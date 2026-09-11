@@ -28,7 +28,12 @@ fn fixture() -> App {
         .set("scan:1", &forgive_me::app::Scan::default())
         .unwrap();
     let mut app = App::new(store, false).unwrap();
-    app.capabilities = vec!["remove_follower".into(), "adapter:2".into()];
+    app.capabilities = vec![
+        "remove_follower".into(),
+        "adapter:2".into(),
+        "sparse_policy:1".into(),
+        "saved_activity:1".into(),
+    ];
     app
 }
 fn key(c: char) -> KeyEvent {
@@ -108,6 +113,7 @@ async fn finalized_attempt_is_not_replayed_after_queue_checkpoint_loss() {
             target_id: "2".into(),
             batch_id: "b".into(),
             policy: policy.clone(),
+            approved_account: None,
             deadline_ms: now_ms() + 120_000,
         },
     };
@@ -250,6 +256,7 @@ async fn deferred_removal_stays_queued_cooldown_survives_reload_and_is_not_unres
             target_id: "2".into(),
             batch_id: "b".into(),
             policy: app.policy.clone(),
+            approved_account: None,
             deadline_ms: now_ms() + 120_000,
         },
     };
@@ -353,7 +360,7 @@ async fn activity_checks_follow_display_order_and_focus_the_active_account() {
 }
 
 #[tokio::test]
-async fn basic_selection_queues_unchecked_accounts_in_display_order_and_preserves_protections() {
+async fn basic_selection_requires_activity_clearance_before_queueing_in_display_order() {
     let mut app = fixture();
     let base = app.accounts.get_mut("2").unwrap();
     base.handle = "zulu".into();
@@ -396,6 +403,10 @@ async fn basic_selection_queues_unchecked_accounts_in_display_order_and_preserve
             .iter()
             .all(|id| app.accounts[id].reason(&app.policy, now_ms()).is_err())
     );
+    assert!(app.key(key('d')).await.is_err());
+    for id in ["99", "2"] {
+        app.accounts.get_mut(id).unwrap().checked_at_ms = Some(now_ms());
+    }
     app.key(key('d')).await.unwrap();
     assert_eq!(app.confirmation, vec!["99", "2"]);
     app.key(key('y')).await.unwrap();
@@ -412,5 +423,74 @@ async fn basic_selection_queues_unchecked_accounts_in_display_order_and_preserve
         "99"
     );
     assert_eq!(app.focused().as_deref(), Some("99"));
-    assert_eq!(app.active_target(), Some(("99", "Check / remove")));
+    assert_eq!(app.active_target(), Some(("99", "Removing")));
+}
+
+#[test]
+fn new_sparse_defaults_upgrade_future_reviews_but_not_approved_queues() {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    let old_policy = serde_json::json!({ "inactive_days": 30, "skip_verified": true, "skip_following": true, "include_zero_posts": true, "delay_seconds": 10, "batch_limit": 50 });
+    store.set("policy", &old_policy).unwrap();
+    store.set("last_owner", &"1").unwrap();
+    store
+        .set(
+            "batch:1",
+            &serde_json::json!({"id":"old", "ids":["2"], "policy":old_policy}),
+        )
+        .unwrap();
+    let app = App::new(store, false).unwrap();
+    assert_eq!(app.policy.sparse_old_max_posts, 5);
+    assert_eq!(app.policy.inactive_days, 30);
+    assert_eq!(app.batch.unwrap().policy.sparse_old_max_posts, 0);
+}
+
+#[tokio::test]
+async fn sparse_policy_requires_browser_support_before_any_action_is_journaled() {
+    let mut app = fixture();
+    app.capabilities.retain(|c| c != "saved_activity:1");
+    let (tx, mut rx) = mpsc::channel(8);
+    app.sender = Some(tx);
+    app.batch = Some(Batch {
+        id: "b".into(),
+        ids: VecDeque::from(["2".into()]),
+        policy: app.policy.clone(),
+    });
+    app.paused = false;
+    assert!(app.tick().await.is_err());
+    assert!(app.paused);
+    assert!(app.pending.is_none());
+    assert!(rx.try_recv().is_err());
+    app.store
+        .run(|s| {
+            assert!(s.unresolved("1")?.is_empty());
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+#[test]
+fn volume_statistics_handle_small_equal_and_skewed_cohorts() {
+    use forgive_me::model::post_volume;
+    let mut cohort = vec![
+        Account {
+            follows_me: Some(true),
+            posts: Some(100),
+            ..Default::default()
+        };
+        29
+    ];
+    assert!(post_volume(cohort.iter(), 100).contains("Need 30"));
+    cohort.push(cohort[0].clone());
+    assert!(post_volume(cohort.iter(), 100).contains("counts equal"));
+    cohort[0].posts = Some(0);
+    assert!(post_volume(cohort.iter(), 0).contains("LOW OUTLIER"));
+    cohort.push(Account {
+        posts: Some(u64::MAX),
+        follows_me: Some(false),
+        ..Default::default()
+    });
+    assert!(post_volume(cohort.iter(), 0).contains("n=30"));
+    cohort[1].posts = None;
+    assert!(post_volume(cohort.iter(), 0).contains("Need 30"));
 }

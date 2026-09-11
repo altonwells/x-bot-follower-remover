@@ -1,4 +1,4 @@
-import { parseWork, type Work, type Result } from "./protocol";
+import { parseWork, type Work, type Result, type Account } from "./protocol";
 import { recoveryResult, type JournalStore, type Receipt } from "./journal";
 
 export interface Client {
@@ -15,6 +15,7 @@ export interface Client {
     p: any,
     guard: () => void,
     beforeWrite: () => Promise<void>,
+    approved?: Account,
   ): Promise<Result>;
   reconcile(owner: string, id: string): Promise<Result>;
   openProfile(owner: string, id: string): Promise<Result>;
@@ -152,6 +153,7 @@ export class Runner {
                 record = { work, state: "dispatched" };
                 await this.journal.set(record);
               },
+              c.approved_account,
             );
           } catch (e) {
             const message = safeMessage(e);

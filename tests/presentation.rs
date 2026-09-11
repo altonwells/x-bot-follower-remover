@@ -174,3 +174,32 @@ async fn selected_unchecked_accounts_and_active_work_are_visible_in_the_queue_li
         .unwrap();
     assert!(screen(&mut app, 140, 42, 0).contains("Reseting followers"));
 }
+
+#[test]
+fn sparse_old_is_a_candidate_and_missing_coverage_is_review_not_keep() {
+    let mut app = app();
+    app.accounts.insert(
+        "1".into(),
+        Account {
+            id: "1".into(),
+            handle: "example12345".into(),
+            follows_me: Some(true),
+            i_follow: Some(false),
+            verified: Some(false),
+            protected: Some(false),
+            posts: Some(2),
+            checked_at_ms: Some(forgive_me::model::now_ms()),
+            last_activity_ms: Some(forgive_me::model::now_ms() - 657 * 86_400_000),
+            activity_note: "Replies coverage incomplete".into(),
+            ..Default::default()
+        },
+    );
+    let text = screen(&mut app, 140, 36, 0);
+    assert!(text.contains("Sparse + old observed activity"));
+    assert!(text.contains(env!("CARGO_PKG_VERSION")));
+    assert!(text.contains("Replies coverage incomplete"));
+    app.policy.sparse_old_max_posts = 0;
+    let text = screen(&mut app, 140, 42, 0);
+    assert!(text.contains("REVIEW: Incomplete activity coverage"));
+    assert!(!text.contains("PROTECTED FROM REMOVAL"));
+}

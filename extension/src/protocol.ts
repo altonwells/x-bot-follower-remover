@@ -3,6 +3,7 @@ export interface Policy {
   skip_verified: boolean;
   skip_following: boolean;
   include_zero_posts: boolean;
+  sparse_old_max_posts?: number;
   delay_seconds: number;
   batch_limit: number;
 }
@@ -39,6 +40,7 @@ export type Command =
       batch_id: string;
       policy: Policy;
       deadline_ms: number;
+      approved_account?: Account;
     }
   | { kind: "reconcile"; target_id: string; original_command_id: string }
   | { kind: "open_profile"; target_id: string };
@@ -129,6 +131,10 @@ export function parseWork(value: unknown): Work {
       !Number.isInteger(p.inactive_days) ||
       p.inactive_days < 1 ||
       p.inactive_days > 3650 ||
+      (p.sparse_old_max_posts !== undefined &&
+        (!Number.isInteger(p.sparse_old_max_posts) ||
+          p.sparse_old_max_posts < 0 ||
+          p.sparse_old_max_posts > 100)) ||
       !["skip_verified", "skip_following", "include_zero_posts"].every(
         (k) => typeof p[k as keyof Policy] === "boolean",
       )
@@ -164,13 +170,24 @@ export function eligible(a: Account, p: Policy, now = Date.now()): boolean {
   )
     return false;
   if (
-    a.checked_at_ms === null ||
+    typeof a.checked_at_ms !== "number" ||
+    !Number.isFinite(a.checked_at_ms) ||
     a.checked_at_ms > now + 60_000 ||
     now - a.checked_at_ms > 86_400_000
   )
     return false;
-  if (p.include_zero_posts && a.posts === 0) return true;
   const cutoff = now - p.inactive_days * 86_400_000;
   if (a.last_activity_ms !== null && a.last_activity_ms > cutoff) return false;
-  return a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff;
+  if (p.include_zero_posts && a.posts === 0) return true;
+  if (a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff)
+    return true;
+  return (
+    (p.sparse_old_max_posts ?? 0) > 0 &&
+    a.posts !== null &&
+    a.posts > 0 &&
+    a.posts <= p.sparse_old_max_posts! &&
+    a.last_activity_ms !== null &&
+    a.last_activity_ms > 0 &&
+    a.last_activity_ms <= cutoff
+  );
 }

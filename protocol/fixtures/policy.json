@@ -15,6 +15,17 @@
   {"name":"recent repost","changes":{"last_activity_ms":19999999999},"eligible":false},
   {"name":"keep overrides match","changes":{"kept":true},"eligible":false},
   {"name":"stale evidence","changes":{"checked_at_ms":1000},"eligible":false},
-  {"name":"unknown incoming relationship","changes":{"follows_me":null},"eligible":false}
+  {"name":"unknown incoming relationship","changes":{"follows_me":null},"eligible":false},
+  {"name":"sparse old incomplete coverage","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null},"eligible":true},
+  {"name":"sparse old rule disabled","changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null},"eligible":false},
+  {"name":"sparse count above limit","policy":{"sparse_old_max_posts":5},"changes":{"posts":6,"last_activity_ms":1000000,"coverage_since_ms":null},"eligible":false},
+  {"name":"sparse without observed activity","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":null,"coverage_since_ms":null},"eligible":false},
+  {"name":"sparse recent reply wins","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":19999999999,"coverage_since_ms":null},"eligible":false},
+  {"name":"sparse verified still excluded","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null,"verified":true},"eligible":false},
+  {"name":"sparse followed still excluded","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null,"i_follow":true},"eligible":false},
+  {"name":"sparse kept still excluded","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null,"kept":true},"eligible":false},
+  {"name":"sparse stale evidence","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null,"checked_at_ms":1000},"eligible":false},
+  {"name":"sparse unknown visibility","policy":{"sparse_old_max_posts":5},"changes":{"posts":2,"last_activity_ms":1000000,"coverage_since_ms":null,"protected":null},"eligible":false},
+  {"name":"recent activity beats zero count","changes":{"posts":0,"last_activity_ms":19999999999},"eligible":false}
  ]
 }

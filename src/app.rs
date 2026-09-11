@@ -82,7 +82,20 @@ impl App {
             .into_iter()
             .map(|a| (a.id.clone(), a))
             .collect();
-        let policy = store.get("policy")?.unwrap_or_default();
+        let saved_policy = store.get::<serde_json::Value>("policy")?;
+        let mut policy: Policy = saved_policy
+            .clone()
+            .map(serde_json::from_value)
+            .transpose()?
+            .unwrap_or_default();
+        // Upgrade future reviews only. Batch policies deserialize missing fields as disabled.
+        if saved_policy
+            .as_ref()
+            .is_some_and(|p| p.get("sparse_old_max_posts").is_none())
+        {
+            policy.sparse_old_max_posts = Policy::default().sparse_old_max_posts;
+            store.set("policy", &policy)?;
+        }
         let scan = store.get(&format!("scan:{owner}"))?.unwrap_or_default();
         let batch = store.get(&format!("batch:{owner}"))?.flatten();
         let pacing = store.get(&format!("pacing:{owner}"))?.unwrap_or_default();
@@ -153,7 +166,7 @@ impl App {
     pub fn active_target(&self) -> Option<(&str, &str)> {
         match &self.pending.as_ref()?.command {
             Command::InspectAccount { target_id, .. } => Some((target_id, "Checking activity")),
-            Command::RemoveFollower { target_id, .. } => Some((target_id, "Check / remove")),
+            Command::RemoveFollower { target_id, .. } => Some((target_id, "Removing")),
             _ => None,
         }
     }
@@ -213,6 +226,10 @@ impl App {
             command,
         };
         if let Command::RemoveFollower { policy, .. } = &work.command {
+            if !self.demo && !self.capabilities.iter().any(|c| c == "saved_activity:1") {
+                self.paused = true;
+                bail!("Reload the v0.1.10 Chrome extension to remove using saved activity checks");
+            }
             let allowed = self.pacing.reserve(policy.batch_limit);
             let pacing = self.pacing.clone();
             let key = format!("pacing:{}", self.owner);
@@ -333,7 +350,7 @@ impl App {
                             .filter(|id| {
                                 self.accounts
                                     .get(*id)
-                                    .is_some_and(|a| a.basic_reason(&self.policy).is_ok())
+                                    .is_some_and(|a| a.reason(&self.policy, now_ms()).is_ok())
                             })
                             .cloned()
                             .collect();
@@ -366,9 +383,9 @@ impl App {
                         self.store.run(move |s| s.set("policy", &p)).await?;
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        self.filter_row = (self.filter_row + 1) % 6
+                        self.filter_row = (self.filter_row + 1) % 7
                     }
-                    KeyCode::Up | KeyCode::Char('k') => self.filter_row = (self.filter_row + 5) % 6,
+                    KeyCode::Up | KeyCode::Char('k') => self.filter_row = (self.filter_row + 6) % 7,
                     KeyCode::Left | KeyCode::Char('-') => self.adjust(-1),
                     KeyCode::Right | KeyCode::Char('+') | KeyCode::Char(' ') => self.adjust(1),
                     _ => {}
@@ -501,7 +518,7 @@ impl App {
                     .filter(|a| a.basic_reason(&self.policy).is_ok())
                     .map(|a| a.id.clone())
                     .collect();
-                self.log(format!("{} selected by basic rules in this view. Activity will be checked before removal; accounts that fail are skipped.", self.selected.len()));
+                self.log(format!("{} selected by basic rules in this view. Press i to check activity. Only cleared candidates can enter the removal queue.", self.selected.len()));
             }
             KeyCode::Char('v') => self.show_queue_list = !self.show_queue_list,
             KeyCode::Char('K') => {
@@ -529,12 +546,14 @@ impl App {
                     .ordered_followers()
                     .into_iter()
                     .filter(|a| {
-                        self.selected.contains(&a.id) && a.basic_reason(&self.policy).is_ok()
+                        self.selected.contains(&a.id) && a.reason(&self.policy, now_ms()).is_ok()
                     })
                     .map(|a| a.id.clone())
                     .collect();
                 if self.confirmation.is_empty() {
-                    bail!("Select checked candidates with a, or basic-rule matches with Shift+A");
+                    bail!(
+                        "No selected accounts have cleared activity rules. Press i to check activity, then a to select candidates."
+                    );
                 }
                 self.paused = true;
                 self.mode = Mode::Confirm;
@@ -692,6 +711,10 @@ impl App {
                 self.policy.batch_limit =
                     (self.policy.batch_limit as i32 + d * 10).clamp(1, 500) as usize
             }
+            6 => {
+                self.policy.sparse_old_max_posts =
+                    (self.policy.sparse_old_max_posts as i32 + d).clamp(0, 100) as u32
+            }
             _ => {}
         }
     }
@@ -734,13 +757,24 @@ impl App {
                 batch.ids.pop_front();
             }
             if let Some(target_id) = batch.ids.front().cloned() {
+                let account = self
+                    .accounts
+                    .get(&target_id)
+                    .filter(|a| a.reason(&batch.policy, now_ms()).is_ok())
+                    .cloned();
+                let Some(account) = account else {
+                    self.paused = true;
+                    self.log("Saved activity does not clear this account or is over 24 hours old. Cancel the queue, check activity with i, and review again.");
+                    return Ok(());
+                };
                 let command = Command::RemoveFollower {
                     target_id: target_id.clone(),
                     batch_id: batch.id.clone(),
                     policy: batch.policy.clone(),
+                    approved_account: Some(Box::new(account)),
                     deadline_ms: now_ms() + 120_000,
                 };
-                self.follow_target(&target_id, "Checking before removal");
+                self.follow_target(&target_id, "Removing");
                 self.submit(command).await?;
             } else {
                 self.batch = None;

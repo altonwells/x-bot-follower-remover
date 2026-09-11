@@ -1,6 +1,6 @@
 use crate::{
     app::{App, Mode},
-    model::{Account, clean, now_ms},
+    model::{Account, clean, now_ms, post_volume},
     theme::{self, *},
 };
 use ratatui::{
@@ -24,7 +24,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("a", "Select checked removal candidates in this view"),
     (
         "Shift+A",
-        "Select basic matches; check activity before removal",
+        "Select basic matches; i clears activity before queueing",
     ),
     ("K", "Keep / unkeep"),
     ("Enter", "Account details"),
@@ -138,7 +138,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(vec![
             Line::from(Span::styled(format!(" ● {label} "), bold(color).bg(RAISED))),
             Line::styled(
-                format!("LOCAL SESSION  /  {} ", env!("CARGO_PKG_VERSION")),
+                format!("LOCAL / v{} ", env!("CARGO_PKG_VERSION")),
                 fg(MUTED),
             ),
         ])
@@ -261,7 +261,7 @@ fn render_progress(frame: &mut Frame, app: &App, area: Rect, spacious: bool) {
         lines.push(Line::styled(rule, fg(MUTED)));
         lines.push(Line::styled(if app.pacing.remaining_seconds() > 0 && !app.paused {
             format!(" NEXT TASK in {}s · {}", app.pacing.remaining_seconds(), app.pacing.reason)
-        } else { " Unknown evidence and kept accounts are protected. Selection does not remove anyone.".into() }, fg(MUTED)));
+        } else { format!(" Sparse + old: {} · REVIEW = incomplete check · KEEP = protected · f changes rules", if app.policy.sparse_old_max_posts == 0 { "off".into() } else { format!("≤{} posts", app.policy.sparse_old_max_posts) }) }, fg(MUTED)));
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
@@ -408,6 +408,10 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
                             "CHECK FIRST"
                         } else if decision.is_ok() {
                             "REMOVE"
+                        } else if a.basic_reason(&app.policy).is_ok()
+                            && decision != Err("Recently active")
+                        {
+                            "REVIEW"
                         } else {
                             "KEEP"
                         },
@@ -502,6 +506,9 @@ fn render_evidence(frame: &mut Frame, app: &App, area: Rect, account: Option<&Ac
                     "✓ SELECTED / CHECK FIRST"
                 } else if decision.is_ok() {
                     "✓ REMOVAL CANDIDATE"
+                } else if a.basic_reason(&app.policy).is_ok() && decision != Err("Recently active")
+                {
+                    "— REVIEW / INCOMPLETE CHECK"
                 } else {
                     "— PROTECTED FROM REMOVAL"
                 },
@@ -519,12 +526,34 @@ fn render_evidence(frame: &mut Frame, app: &App, area: Rect, account: Option<&Ac
         fact("Followers", count(a.followers)),
         fact("Following", count(a.following_count)),
         fact("Current posts", count(a.posts)),
-        fact("Activity", activity(a, now_ms())),
+        fact("Observed post", activity(a, now_ms())),
+        fact(
+            "Coverage",
+            if a.coverage_since_ms.is_some() {
+                "Established"
+            } else {
+                "Incomplete"
+            },
+        ),
     ];
     if facts.height >= 12 {
         lines.push(Line::from(""));
         lines.push(Line::styled("EVIDENCE", fg(MUTED)));
         lines.push(Line::styled(clean(&a.activity_note), fg(TEXT)));
+        if let Some(posts) = a.posts {
+            lines.push(Line::styled("POST VOLUME / COLLECTED FOLLOWERS", fg(MUTED)));
+            lines.push(Line::styled(
+                post_volume(app.accounts.values(), posts),
+                fg(ICE),
+            ));
+        }
+        let digits = a.handle.chars().filter(|c| c.is_ascii_digit()).count();
+        if digits >= 5 {
+            lines.push(Line::styled(
+                format!("Handle: {digits} digits (weak signal)"),
+                fg(MUTED),
+            ));
+        }
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), facts);
     frame.render_widget(
@@ -678,6 +707,14 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                     "Hourly attempt budget",
                     format!("{} / hour", app.policy.batch_limit),
                 ),
+                (
+                    "REMOVE: sparse + old",
+                    if app.policy.sparse_old_max_posts == 0 {
+                        "off".into()
+                    } else {
+                        format!("≤{} posts", app.policy.sparse_old_max_posts)
+                    },
+                ),
             ];
             let mut lines: Vec<Line> = labels
                 .into_iter()
@@ -698,11 +735,11 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 .collect();
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "All conditions must pass. Unknown evidence stays protected.",
+                "Protections always apply. Removal rules are alternatives.",
                 fg(MUTED),
             ));
             lines.push(Line::styled(
-                "These rules choose removal candidates; they do not hide accounts.",
+                "Sparse + old accepts incomplete coverage, but needs an old observed post.",
                 fg(MUTED),
             ));
             lines.push(Line::styled(
@@ -713,7 +750,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 frame,
                 " REMOVAL RULES / WHO CAN BE REMOVED ",
                 lines,
-                (76, 16),
+                (82, 18),
                 "↑ ↓ choose · ← → adjust · Enter saves",
                 0,
                 MINT,
@@ -740,13 +777,27 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                         fact("Followers", count(a.followers)),
                         fact("Following", count(a.following_count)),
                         fact("Current posts", count(a.posts)),
-                        fact("Activity", activity(a, now_ms())),
+                        fact("Observed post", activity(a, now_ms())),
+                        fact(
+                            "Coverage",
+                            if a.coverage_since_ms.is_some() {
+                                "Established"
+                            } else {
+                                "Incomplete"
+                            },
+                        ),
                         Line::from(""),
                         Line::styled(
                             decision.unwrap_or_else(|s| s),
                             bold(if decision.is_ok() { MINT } else { AMBER }),
                         ),
                         Line::styled(clean(&a.activity_note), fg(MUTED)),
+                        Line::styled(
+                            a.posts
+                                .map(|posts| post_volume(app.accounts.values(), posts))
+                                .unwrap_or_else(|| "Post count unknown".into()),
+                            fg(ICE),
+                        ),
                         Line::from(""),
                         Line::styled(clean(&a.bio), fg(TEXT)),
                     ],
@@ -763,13 +814,13 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
             let mut lines = vec![
                 Line::styled(
                     format!(
-                        "Check {} accounts for removal from @{}?",
+                        "Remove {} cleared followers from @{}?",
                         app.confirmation.len(),
                         clean(&app.handle)
                     ),
                     bold(TEXT),
                 ),
-                Line::styled("Only accounts that pass all rules are removed.", fg(TEXT)),
+                Line::styled("Uses saved activity results. No activity rescan.", fg(TEXT)),
                 Line::styled("There is no restore-followers action.", bold(RED)),
                 Line::styled(
                     format!(
@@ -779,9 +830,18 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                     fg(MUTED),
                 ),
             ];
+            if app.policy.sparse_old_max_posts > 0 {
+                lines[3] = Line::styled(
+                    format!(
+                        "Sparse + old: ≤{} posts; coverage may be incomplete.",
+                        app.policy.sparse_old_max_posts
+                    ),
+                    fg(AMBER),
+                );
+            }
             if !compact {
                 lines.push(Line::styled(
-                    "Activity is checked before removal; others are skipped.",
+                    "Identity and relationship protections are still checked.",
                     fg(ICE),
                 ));
                 lines.push(Line::styled(
@@ -869,7 +929,7 @@ fn activity(a: &Account, now: i64) -> String {
     } else if a.posts == Some(0) {
         "Zero posts".into()
     } else if let Some(t) = a.last_activity_ms {
-        format!("{}d ago", ((now - t) / 86_400_000).max(0))
+        format!("Seen {}d", ((now - t) / 86_400_000).max(0))
     } else {
         "Unknown".into()
     }

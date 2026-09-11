@@ -275,11 +275,15 @@ test("separate activity channels require complete evidence and stop on a recent 
 });
 test("mutation 404 is uncertain and is never replayed", async (t) => {
   const f = await fixture(t, () => new Response("", { status: 404 }));
-  f.client.inspect = async () => ({
+  const approved = {
     ...parseUser(modern()),
     posts: 0,
     checked_at_ms: Date.now(),
-  });
+  };
+  f.client.profile = async () => parseUser(modern());
+  f.client.inspect = async () => {
+    throw new Error("Activity must not be fetched during removal");
+  };
   let journal = 0;
   const result = await f.client.remove(
     "1",
@@ -289,6 +293,7 @@ test("mutation 404 is uncertain and is never replayed", async (t) => {
     async () => {
       journal++;
     },
+    approved,
   );
   assert.equal(result.kind, "action");
   if (result.kind === "action") assert.equal(result.status, "uncertain");
@@ -340,4 +345,100 @@ test("activity preflight starts at the first page despite captured scrolling cur
     JSON.parse(activity[0].url.searchParams.get("variables")!).userId,
     "2",
   );
+});
+
+test("removal uses approved sparse evidence and makes no activity requests", async (t) => {
+  const f = await fixture(t, (u, init) => {
+    if (u.pathname.endsWith("UserByRestId"))
+      return Response.json({ data: { user: { result: modern() } } });
+    if (init?.method === "POST") return Response.json({ data: {} });
+    throw new Error(`Unexpected request ${u.pathname}`);
+  });
+  const approved = {
+    ...parseUser(modern()),
+    posts: 2,
+    checked_at_ms: Date.now(),
+    last_activity_ms: Date.parse("2020-01-01"),
+    coverage_since_ms: null,
+  };
+  f.client.inspect = async () => {
+    throw new Error("Unexpected activity scan");
+  };
+  let relationships = 0;
+  f.client.relationship = async () => ({
+    follows_me: ++relationships === 1,
+    i_follow: false,
+  });
+  let journal = 0;
+  const result = await f.client.remove(
+    "1",
+    "2",
+    { ...policy, sparse_old_max_posts: 5 },
+    () => {},
+    async () => {
+      journal++;
+    },
+    approved,
+  );
+  assert.equal(result.kind, "action");
+  if (result.kind === "action") assert.equal(result.status, "verified_removed");
+  assert.equal(journal, 1);
+  assert(!f.calls.some((c) => /Timeline|UserTweets/.test(c.url.pathname)));
+});
+
+test("missing or expired saved activity stops removal without network requests", async (t) => {
+  const f = await fixture(t, () => {
+    throw new Error("No API request expected");
+  });
+  const approved = {
+    ...parseUser(modern()),
+    posts: 0,
+    checked_at_ms: Date.now() - 86_400_001,
+  };
+  for (const evidence of [
+    undefined,
+    approved,
+    { ...approved, id: "wrong", checked_at_ms: Date.now() },
+  ]) {
+    await assert.rejects(
+      f.client.remove(
+        "1",
+        "2",
+        policy,
+        () => {},
+        async () => {
+          throw new Error("No write");
+        },
+        evidence,
+      ),
+      /Saved activity/,
+    );
+  }
+  assert.equal(f.calls.filter((c) => c.url.host === "x.com").length, 0);
+});
+
+test("new relationship protections override saved clearance", async (t) => {
+  const f = await fixture(t, () =>
+    Response.json({
+      data: { user: { result: { ...modern(), is_blue_verified: true } } },
+    }),
+  );
+  const approved = {
+    ...parseUser(modern()),
+    posts: 0,
+    checked_at_ms: Date.now(),
+  };
+  const result = await f.client.remove(
+    "1",
+    "2",
+    policy,
+    () => {},
+    async () => {
+      throw new Error("Must not dispatch");
+    },
+    approved,
+  );
+  assert.equal(result.kind, "action");
+  if (result.kind === "action") assert.equal(result.status, "skipped");
+  assert(!f.calls.some((c) => c.init?.method === "POST"));
 });

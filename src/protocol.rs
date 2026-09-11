@@ -19,6 +19,8 @@ pub enum Command {
         batch_id: String,
         policy: Policy,
         deadline_ms: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approved_account: Option<Box<Account>>,
     },
     Reconcile {
         target_id: String,

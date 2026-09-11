@@ -63,11 +63,25 @@ fn main() {
         "tide_pool",
         "unknown_activity",
         "violet_hour",
+        "willow",
+        "winter",
+        "woodland",
+        "yellow",
+        "yesterday",
+        "zenith",
+        "zinc",
+        "zodiac",
     ]
     .iter()
     .enumerate()
     {
-        let days = if i % 4 == 0 { 2 } else { 240 };
+        let days = if i == 0 {
+            657
+        } else if i % 4 == 0 {
+            2
+        } else {
+            240
+        };
         let a = Account {
             id: i.to_string(),
             handle: name.to_string(),
@@ -75,7 +89,13 @@ fn main() {
             bio: "Fictional preview account. No real X account is represented.".into(),
             followers: Some(12 + i as u64 * 87),
             following_count: Some(1400 + i as u64),
-            posts: Some(if i == 5 { 0 } else { 42 }),
+            posts: Some(if i == 0 {
+                2
+            } else if i == 5 {
+                0
+            } else {
+                42
+            }),
             verified: Some(i == 2),
             protected: Some(false),
             follows_me: Some(true),
@@ -85,14 +105,16 @@ fn main() {
             } else {
                 Some(now - days * 86_400_000)
             },
-            coverage_since_ms: if i == 20 {
+            coverage_since_ms: if i == 0 || i == 20 {
                 None
             } else {
                 Some(now - 365 * 86_400_000)
             },
             checked_at_ms: Some(now),
             observed_at_ms: now,
-            activity_note: if i == 20 {
+            activity_note: if i == 0 {
+                "Replies coverage incomplete. Old observed post; sparse rule qualifies."
+            } else if i == 20 {
                 "Activity could not be established."
             } else {
                 "Latest post, reply and repost checked. Simulated evidence."
@@ -113,6 +135,10 @@ fn main() {
     app.confirmation = app.selected.iter().cloned().collect();
     scenes.push(capture(&mut app, "review", 120, 34));
     scenes.push(capture(&mut app, "review-minimum", 52, 12));
+    app.focus = 0;
+    app.mode = Mode::Browse;
+    scenes.push(capture(&mut app, "sparse-review", 140, 42));
+    app.focus = 5;
     app.mode = Mode::Filters;
     scenes.push(capture(&mut app, "policy", 120, 34));
     app.mode = Mode::Browse;
@@ -131,6 +157,7 @@ fn main() {
             target_id: "5".into(),
             batch_id: "preview".into(),
             policy: app.policy.clone(),
+            approved_account: None,
             deadline_ms: now + 120_000,
         },
     });

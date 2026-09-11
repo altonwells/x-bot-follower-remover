@@ -20,6 +20,9 @@ pub struct Policy {
     pub skip_verified: bool,
     pub skip_following: bool,
     pub include_zero_posts: bool,
+    /// Missing on old saved queues: preserve their stricter approved policy.
+    #[serde(default)]
+    pub sparse_old_max_posts: u32,
     pub delay_seconds: u32,
     pub batch_limit: usize,
 }
@@ -30,6 +33,7 @@ impl Default for Policy {
             skip_verified: true,
             skip_following: true,
             include_zero_posts: true,
+            sparse_old_max_posts: 5,
             delay_seconds: 60,
             batch_limit: 50,
         }
@@ -101,18 +105,54 @@ impl Account {
         if checked > now + 60_000 || now - checked > 86_400_000 {
             return Err("Activity evidence expired");
         }
-        if p.include_zero_posts && self.posts == Some(0) {
-            return Ok("Zero current posts");
-        }
         let cutoff = now - i64::from(p.inactive_days) * 86_400_000;
         if self.last_activity_ms.is_some_and(|t| t > cutoff) {
             return Err("Recently active");
         }
+        if p.include_zero_posts && self.posts == Some(0) {
+            return Ok("Zero current posts");
+        }
         if self.coverage_since_ms.is_some_and(|t| t <= cutoff) {
             return Ok("Inactive");
         }
-        Err("Activity unknown")
+        if p.sparse_old_max_posts > 0
+            && self
+                .posts
+                .is_some_and(|n| n > 0 && n <= u64::from(p.sparse_old_max_posts))
+            && self.last_activity_ms.is_some_and(|t| t > 0 && t <= cutoff)
+        {
+            return Ok("Sparse + old observed activity");
+        }
+        Err("Incomplete activity coverage")
     }
+}
+
+/// Descriptive statistics for the collected cohort, never a bot probability.
+pub fn post_volume<'a>(accounts: impl Iterator<Item = &'a Account>, posts: u64) -> String {
+    let (mut n, mut below, mut tied) = (0u64, 0u64, 0u64);
+    let (mut mean, mut m2) = (0.0, 0.0);
+    for a in accounts.filter(|a| a.follows_me == Some(true)) {
+        let Some(count) = a.posts else { continue };
+        n += 1;
+        below += u64::from(count < posts);
+        tied += u64::from(count == posts);
+        let x = (count as f64).ln_1p();
+        let delta = x - mean;
+        mean += delta / n as f64;
+        m2 += delta * (x - mean);
+    }
+    if n < 30 {
+        return format!("Need 30 counts ({n} collected)");
+    }
+    let percentile = 100.0 * (below as f64 + tied as f64 / 2.0) / n as f64;
+    if m2 <= f64::EPSILON {
+        return format!("All {n} counts equal; no outlier");
+    }
+    let z = ((posts as f64).ln_1p() - mean) / (m2 / (n - 1) as f64).sqrt();
+    format!(
+        "p{percentile:.0} · log z {z:+.1} · n={n}{}",
+        if z <= -2.0 { " · LOW OUTLIER" } else { "" }
+    )
 }
 
 pub fn clean(text: &str) -> String {

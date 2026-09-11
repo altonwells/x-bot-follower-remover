@@ -27,7 +27,11 @@ test("shared policy fixtures agree with Rust", () => {
   );
   for (const c of f.cases)
     assert.equal(
-      eligible({ ...f.account, ...c.changes }, f.policy, f.now_ms),
+      eligible(
+        { ...f.account, ...c.changes },
+        { ...f.policy, ...c.policy },
+        f.now_ms,
+      ),
       c.eligible,
       c.name,
     );

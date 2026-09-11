@@ -179,6 +179,7 @@ mod tests {
                 target_id: "123".into(),
                 batch_id: "batch".into(),
                 policy: crate::model::Policy::default(),
+                approved_account: None,
                 deadline_ms: crate::model::now_ms() + 120_000,
             },
         };
