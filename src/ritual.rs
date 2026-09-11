@@ -179,7 +179,7 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
     let target_label = scene.target_label.clone();
     let policy = scene.policy;
     let remaining = scene.remaining;
-    if inner.height < 20 || inner.width < 85 {
+    if inner.height < 12 || inner.width < 64 {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::styled(format!("{counter} · {owner}"), bold(MINT)),
@@ -211,32 +211,89 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
         return;
     }
     let stage = centered(inner, 112, 25);
-    let [art, detail] = Layout::horizontal([Constraint::Length(45), Constraint::Min(34)])
+    let art_width = if stage.width >= 83 { 45 } else { 36 };
+    let [art, detail] = Layout::horizontal([Constraint::Length(art_width), Constraint::Min(24)])
         .spacing(4)
         .areas(stage);
-    // A permanently tipped ladle meets the stream at column 23.
-    for (row, line) in [
-        "     ╲╲",
-        "       ╲╲",
-        "         ╲╲",
-        "           ╲╲━━━━━━━━━━╮",
-        "            ╲≋≋≋≋≋≋≋≋╲",
-        "             ╰━━━━━━━━╲",
-    ]
-    .iter()
-    .enumerate()
-    {
+    let tall = art.height >= 24;
+    let medium = art.height >= 17;
+    // Keep the original v0.1.11 composition; shorten its vertical spacing at smaller sizes.
+    // The ladle lip and stream stay aligned at column 23 in every layout.
+    let ladle: &[&str] = if tall {
+        &[
+            "     ╲╲",
+            "       ╲╲",
+            "         ╲╲",
+            "           ╲╲━━━━━━━━━━╮",
+            "            ╲≋≋≋≋≋≋≋≋╲",
+            "             ╰━━━━━━━━╲",
+        ]
+    } else if medium {
+        &[
+            "         ╲╲",
+            "           ╲╲━━━━━━━━━━╮",
+            "            ╲≋≋≋≋≋≋≋≋╲",
+            "             ╰━━━━━━━━╲",
+        ]
+    } else {
+        &[
+            "           ╲╲━━━━━━━━━━╮",
+            "            ╲≋≋≋≋≋≋≋≋╲",
+            "             ╰━━━━━━━━╲",
+        ]
+    };
+    let logo: &[&str] = if tall {
+        &[
+            "███           ███",
+            "  ███       ███",
+            "    ███   ███",
+            "      █████",
+            "       ███",
+            "      █████",
+            "    ███   ███",
+            "  ███       ███",
+            "███           ███",
+        ]
+    } else if medium {
+        &[
+            "███           ███",
+            "  ███       ███",
+            "    ███   ███",
+            "      █████",
+            "    ███   ███",
+            "  ███       ███",
+            "███           ███",
+        ]
+    } else {
+        &[
+            "███           ███",
+            "   ███     ███",
+            "      █████",
+            "   ███     ███",
+            "███           ███",
+        ]
+    };
+    let stream_start = ladle.len() as u16;
+    let logo_y = if tall {
+        12
+    } else if medium {
+        7
+    } else {
+        4
+    };
+    let splash_y = logo_y + logo.len() as u16 + u16::from(tall || !medium);
+    for (row, line) in ladle.iter().enumerate() {
         ink(
             frame,
             art,
             0,
             row as u16,
             line,
-            bold(if row == 4 { ICE } else { TEXT }),
+            bold(if row + 2 == ladle.len() { ICE } else { TEXT }),
         );
     }
     if active {
-        for row in 6..22 {
+        for row in stream_start..splash_y {
             let water =
                 [" ·│┊│· ", "  ┊┃┊  ", " ˙│┃│˙ ", "  ╎┃╎  "][(phase / 2 + row as usize) % 4];
             ink(
@@ -256,7 +313,7 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
             frame,
             art,
             9,
-            22,
+            splash_y,
             if phase % 4 < 2 {
                 "  ˙  ·  ╱ ≋≋≋≋≋ ╲  ·  ˙"
             } else {
@@ -268,7 +325,7 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
             frame,
             art,
             7,
-            23,
+            splash_y + 1,
             if phase % 6 < 3 {
                 "──────≈≈≈────────≈≈≈──────"
             } else {
@@ -277,27 +334,21 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
             fg(BORDER),
         );
     } else {
-        ink(frame, art, 9, 23, "────────────────────────", fg(BORDER));
+        ink(
+            frame,
+            art,
+            9,
+            splash_y + 1,
+            "────────────────────────",
+            fg(BORDER),
+        );
     }
-    for (row, line) in [
-        "███           ███",
-        "  ███       ███",
-        "    ███   ███",
-        "      █████",
-        "       ███",
-        "      █████",
-        "    ███   ███",
-        "  ███       ███",
-        "███           ███",
-    ]
-    .iter()
-    .enumerate()
-    {
+    for (row, line) in logo.iter().enumerate() {
         ink(
             frame,
             art,
             15,
-            12 + row as u16,
+            logo_y + row as u16,
             line,
             bold(if active && (phase / 2 + row) % 6 < 2 {
                 ICE
@@ -312,14 +363,14 @@ pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64)
             tag(
                 frame,
                 art,
-                6 + (age * 15 / 8000) as u16,
+                stream_start + (age * u64::from(splash_y - stream_start - 1) / 8000) as u16,
                 &departure.handle,
                 true,
             );
         }
     }
     if let Some(handle) = &scene.removing {
-        tag(frame, art, 6, handle, false);
+        tag(frame, art, stream_start, handle, false);
     }
     let mut lines = vec![
         Line::from(""),

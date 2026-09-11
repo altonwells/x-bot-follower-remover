@@ -265,3 +265,11 @@ The v0.4.0 release also passed all 9 installer integration tests, the fullscreen
 Removed marketing headings, duplicate metric cards, repeated captions, and footer copy. Desktop now keeps the action bar and table on one screen with scrolling confined to the rows. A version mismatch offers a direct Reload extension action before any manager requests; this addresses the old v0.3.2 service worker with newly installed page files.
 
 TypeScript checking and all 82 extension tests pass. The new regression verifies a mismatched loaded version sends no manager requests and the Reload button calls Chrome's reload API. Desktop layout and account details were checked in the browser with fictional accounts and no JavaScript errors. The Rust worker and activity rules are unchanged.
+
+## Pouring animation at normal terminal sizes (v0.4.2)
+
+Compared the scene against commit `1d8169e` (v0.1.11). The original artwork was preserved, but its `inner.height < 20` fallback collapsed a real 120×30 terminal into a text line: the worker leaves 17 inner rows. The scene now has tall, medium, and short compositions with aligned ladle lips, continuous water, recognizable X blocks, and scaled falling-tag travel.
+
+The rendering regression checks the ladle and X at 120×30, 100×28, 80×26, and 140×42; confirms water changes during cooldown and tags move downward. Existing pause/counter and resize tests also pass. Deterministic 120×30 and 80×26 previews were visually checked. This changes presentation only; no activity rule or queue action changed. The existing v0.4.1 Chrome extension is reused.
+
+Release checks: 83 Rust tests and 82 extension tests passed; Clippy with warnings denied and formatting passed. The bundled extension files match the installed v0.4.1 extension byte for byte, so this terminal update requires no Chrome reload.

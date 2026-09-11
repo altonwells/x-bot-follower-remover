@@ -327,3 +327,43 @@ fn worker_animation_uses_confirmed_tags_and_freezes_on_pause() {
     status.paused = true;
     assert!(draw(&status, &animation).contains("Paused · water stopped"));
 }
+
+#[test]
+fn pouring_scene_survives_real_terminal_sizes_and_tags_keep_moving() {
+    use x_bot_follower_remover::{background::Status, ritual::Animation, ui};
+    let status: Status = serde_json::from_value(json!({"handle":"example","state":"Cooling down","remaining":1,"removed":51,"uncertain":0,"wait_seconds":2,"message":"Confirmed","has_job":true,"paused":false})).unwrap();
+    for (width, height) in [(120, 30), (100, 28), (80, 26), (140, 42)] {
+        let draw = |animation: &Animation| {
+            let mut t =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            t.draw(|f| {
+                ui::render_worker_with_animation(f, &status, None, false, false, Some(animation))
+            })
+            .unwrap();
+            t.backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|c| c.symbol())
+                .collect::<String>()
+        };
+        let mut animation = Animation::default();
+        let first = draw(&animation);
+        assert!(
+            first.contains("━━━━━━━━"),
+            "ladle missing at {width}x{height}"
+        );
+        assert!(
+            first.matches("███").count() >= 5,
+            "X logo missing at {width}x{height}"
+        );
+        animation.advance(std::time::Duration::from_millis(150));
+        assert_ne!(first, draw(&animation), "water must flow during cooldown");
+        animation.removed("departed".into());
+        let top = draw(&animation);
+        animation.advance(std::time::Duration::from_secs(1));
+        animation.advance(std::time::Duration::from_secs(1));
+        let bottom = draw(&animation);
+        assert!(bottom.find("@departed").unwrap() > top.find("@departed").unwrap());
+    }
+}

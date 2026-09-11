@@ -227,5 +227,13 @@ fn main() {
     scenes.push(capture_frame("auto-worker-animation", 140, 42, |f| {
         ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
     }));
+    for (name, w, h) in [
+        ("auto-worker-120x30", 120, 30),
+        ("auto-worker-80x26", 80, 26),
+    ] {
+        scenes.push(capture_frame(name, w, h, |f| {
+            ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
+        }));
+    }
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }
