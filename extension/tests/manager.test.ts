@@ -70,10 +70,14 @@ function data() {
     scan_complete: true,
   };
 }
-async function harness(respond?: (message: any) => Promise<any>) {
+async function harness(
+  respond?: (message: any) => Promise<any>,
+  loadedVersion?: string,
+) {
   const { document, window } = parseHTML(
     fs.readFileSync("options.html", "utf8"),
   );
+  if (loadedVersion) document.body.dataset.extensionVersion = "0.4.1";
   const calls: any[] = [];
   let changed: any;
   let scheduled: (() => void) | undefined;
@@ -98,6 +102,8 @@ async function harness(respond?: (message: any) => Promise<any>) {
     clearTimeout() {},
     chrome: {
       runtime: {
+        getManifest: () => ({ version: loadedVersion ?? "0.4.1" }),
+        reload: () => calls.push({ type: "reload" }),
         sendMessage: async (message: any) => {
           calls.push(message);
           if (respond) return respond(message);
@@ -207,4 +213,16 @@ test("a filter changed during polling discards the old result and requests the l
     h.document.querySelector("#view-heading").textContent,
     "Keeping",
   );
+});
+
+test("an old running extension presents Reload before any manager requests", async () => {
+  const h = await harness(undefined, "0.3.2");
+  assert.equal(h.calls.length, 0);
+  assert.match(
+    h.document.querySelector("#manager-error").textContent,
+    /Reload the extension/,
+  );
+  assert.equal(h.document.querySelector("#reload-extension").hidden, false);
+  h.document.querySelector("#reload-extension").click();
+  assert.equal(h.calls[0].type, "reload");
 });

@@ -1,5 +1,12 @@
 import { build } from "esbuild";
-import { mkdir, copyFile, readdir, cp } from "node:fs/promises";
+import {
+  mkdir,
+  copyFile,
+  readdir,
+  cp,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 if (process.argv.includes("--test")) {
   await mkdir(".test-build", { recursive: true });
   const files = (await readdir("tests")).filter((f) => f.endsWith(".test.ts"));
@@ -26,9 +33,19 @@ if (process.argv.includes("--test")) {
   await cp("icons", "dist/icons", { recursive: true });
   for (const file of [
     "manifest.json",
-    "options.html",
     "options.css",
     "THIRD_PARTY_LICENSES.txt",
   ])
     await copyFile(file, `dist/${file}`);
+}
+
+if (!process.argv.includes("--test")) {
+  const { version } = JSON.parse(await readFile("manifest.json", "utf8"));
+  await writeFile(
+    "dist/options.html",
+    (await readFile("options.html", "utf8")).replace(
+      "__EXTENSION_VERSION__",
+      version,
+    ),
+  );
 }

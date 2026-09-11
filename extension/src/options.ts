@@ -9,7 +9,7 @@ const stored = await chrome.storage.local.get(["port", "token", "pairingMode"]);
 port.value = String(stored.port ?? 47831);
 token.value = typeof stored.token === "string" ? stored.token : "";
 document.querySelector("#version")!.textContent =
-  `Remover ${chrome.runtime.getManifest().version} · Chrome companion`;
+  `v${chrome.runtime.getManifest().version}`;
 function showAccount(handle: unknown) {
   const identified =
     document.body.dataset.connected === "true" &&

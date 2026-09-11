@@ -8,7 +8,7 @@
     <link rel="icon" href="icons/r-32.png" />
     <link rel="stylesheet" href="options.css" />
   </head>
-  <body>
+  <body data-extension-version="__EXTENSION_VERSION__">
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="Remover home"
@@ -19,14 +19,6 @@
             height="36"
           />remover<span>.</span></a
         >
-        <div class="workspace">
-          <span class="workspace-icon">X</span>
-          <div>
-            <strong id="workspace-handle">Your X account</strong
-            ><small>Personal workspace</small>
-          </div>
-        </div>
-        <p class="nav-label">YOUR FOLLOWERS</p>
         <nav id="views" aria-label="Follower views">
           <button data-view="all" class="nav-item active">
             <span>◫ &nbsp; All followers</span><b data-count="all">—</b>
@@ -48,35 +40,29 @@
           </button>
         </nav>
         <div class="sidebar-bottom">
-          <div class="local-note">
-            <span class="dot"></span> Runs on your computer
-          </div>
-          <button id="settings-open" class="nav-item">
-            ⚙ &nbsp; Processing settings</button
+          <button id="settings-open" class="nav-item">⚙ &nbsp; Settings</button
           ><button id="connection-open" class="nav-item">
-            ⌘ &nbsp; Connection & setup</button
+            ⌘ &nbsp; Connection</button
           ><small id="version"></small>
         </div>
       </aside>
       <main class="main">
-        <header class="topbar">
-          <span
-            >FOLLOWER MANAGER <span class="separator">/</span>
-            <span id="account-top">Connect your account</span></span
-          ><span class="live-status" id="live-status">Connecting…</span>
-        </header>
-        <section class="page-heading">
-          <div>
-            <p class="eyebrow">A LITTLE LESS NOISE</p>
-            <h1>Your followers.<br /><span>Your call.</span></h1>
-            <p>See who stays, who goes, and why.</p>
+        <div class="topbar">
+          <div class="connection-status">
+            <strong id="account-top">No account</strong
+            ><span class="live-status" id="live-status">Connecting…</span>
           </div>
           <div class="primary-actions">
             <button id="collect" class="secondary" disabled>
-              ↻ Load followers</button
-            ><button id="start" disabled>Start cleanup <span>↗</span></button>
+              Load followers
+            </button>
+
+            <button id="inspect" class="secondary" disabled>
+              Check activity
+            </button>
+            <button id="start" disabled>Start cleanup</button>
           </div>
-        </section>
+        </div>
         <div
           id="manager-error"
           class="error-banner"
@@ -84,60 +70,38 @@
           aria-live="polite"
           hidden
         ></div>
-        <section class="metrics" aria-label="Follower summary">
-          <button data-view="all" class="metric">
-            <span>Followers loaded</span><strong data-count="all">—</strong
-            ><small>Your saved inventory</small>
-          </button>
-          <button data-view="keep" class="metric">
-            <span>Keeping</span><strong data-count="keep">—</strong
-            ><small>Protected by your rules</small>
-          </button>
-          <button data-view="remove" class="metric">
-            <span>Planned removal</span><strong data-count="remove">—</strong
-            ><small>Pass the activity check</small>
-          </button>
-          <button data-view="removed" class="metric">
-            <span>Removed</span><strong id="removed-total">—</strong
-            ><small>Confirmed removals, all time</small>
-          </button>
-        </section>
-        <section class="run-card" aria-label="Current work">
-          <div class="run-icon" id="run-icon">↻</div>
+        <button id="reload-extension" class="secondary" hidden>
+          Reload extension
+        </button>
+        <section
+          id="run-card"
+          class="run-card"
+          aria-label="Current work"
+          hidden
+        >
           <div class="run-description">
             <div class="run-title">
-              <strong id="run-title">Connect to get started</strong
-              ><span class="badge" id="run-badge">Offline</span>
+              <strong id="run-title">Ready</strong>
             </div>
-            <p id="run-detail">
-              Start remover in your terminal. Your saved followers will appear
-              here.
-            </p>
+            <p id="run-detail"></p>
             <div class="progress-track"><div id="progress-fill"></div></div>
-            <small id="run-progress">No work starts until you choose it.</small>
+            <small id="run-progress"></small>
           </div>
           <div class="run-actions">
-            <button id="inspect" class="secondary" disabled>
-              Check activity</button
-            ><button id="pause" class="secondary" disabled>Pause</button
-            ><button id="cancel" class="quiet" disabled>Cancel job</button>
+            <button id="pause" class="secondary" disabled>Pause</button
+            ><button id="cancel" class="quiet" disabled>Cancel</button>
           </div>
         </section>
         <section class="inventory" aria-label="Follower inventory">
           <div class="inventory-heading">
-            <div>
-              <h2 id="view-heading">All followers</h2>
-              <p id="view-description">
-                Every decision, with the evidence behind it.
-              </p>
-            </div>
+            <h2 id="view-heading" class="sr-only">All followers</h2>
             <label class="search"
               ><span aria-hidden="true">⌕</span
               ><input
                 id="search"
                 type="search"
                 maxlength="200"
-                placeholder="Search name or @handle"
+                placeholder="Search followers"
                 aria-label="Search followers"
               /><kbd>/</kbd></label
             >
@@ -166,11 +130,8 @@
           </div>
           <div id="empty" class="empty">
             <div>◫</div>
-            <h3>Your list starts here</h3>
-            <p>
-              Connect your terminal, then load your followers. Loading does not
-              remove anyone.
-            </p>
+            <h3>No followers loaded</h3>
+            <p>Load followers to begin.</p>
           </div>
           <div class="pagination">
             <span id="page-label">0 followers</span>
@@ -180,19 +141,12 @@
             </div>
           </div>
         </section>
-        <footer>
-          <span>Login stays in Chrome. Progress stays on your computer.</span
-          ><span id="footer-note"
-            >Keep Chrome signed in and your Mac awake.</span
-          >
-        </footer>
       </main>
     </div>
     <dialog id="connection-dialog" class="connection-dialog">
       <div class="dialog-heading">
         <div>
-          <p class="eyebrow">CONNECTION</p>
-          <h2>Let’s get you connected.</h2>
+          <h2>Connection</h2>
         </div>
         <button
           class="quiet close-dialog"

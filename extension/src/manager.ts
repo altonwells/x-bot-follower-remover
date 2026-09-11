@@ -11,16 +11,6 @@ const labels: Record<string, string> = {
   queue: "Removal queue",
   removed: "Removed",
 };
-const descriptions: Record<string, string> = {
-  all: "Every decision, with the evidence behind it.",
-  keep: "Verified, followed, active, or marked to keep.",
-  remove:
-    "These accounts pass the saved activity check. Candidates are not an approved queue.",
-  review:
-    "Missing evidence, unreadable accounts, and results that need reconciliation.",
-  queue: "Only accounts already in the approved removal queue.",
-  removed: "Accounts with a confirmed removal receipt.",
-};
 let state: Snapshot | null = null,
   view = "all",
   page = 0,
@@ -128,44 +118,29 @@ function render(s: Snapshot) {
       ? "✓ Keep people you follow"
       : "Following protection off",
   );
-  text("workspace-handle", `@${s.handle}`);
   text("account-top", `@${s.handle}`);
   document
     .querySelectorAll<HTMLElement>("[data-count]")
     .forEach((n) => (n.textContent = number(s.counts[n.dataset.count!] ?? 0)));
-  text("removed-total", number(s.removed_total));
-  text("live-status", "● Live connection");
+  text("live-status", "● Connected");
   $("live-status").classList.add("online");
   const cooldown = s.cooldown_until_ms > Date.now();
   text(
     "run-title",
     s.paused
       ? s.running
-        ? "Your cleanup is paused"
-        : "Ready when you are"
+        ? "Paused"
+        : "Ready"
       : cooldown
-        ? "Taking a short rest"
-        : (s.active_kind ??
-          (s.running
-            ? "Working through your followers"
-            : "Ready when you are")),
+        ? "Cooling down"
+        : (s.active_kind ?? (s.running ? "Running" : "Ready")),
   );
-  text(
-    "run-badge",
-    s.paused
-      ? "Paused"
-      : cooldown
-        ? "Cooldown"
-        : s.pending
-          ? "Working"
-          : s.running
-            ? "Running"
-            : "Ready",
-  );
-  text(
-    "run-detail",
-    s.active ? `${s.active_kind} · @${s.active.handle}` : s.message,
-  );
+  $("run-card").hidden =
+    !s.running &&
+    !s.pending &&
+    !["following", "followers", "inspect"].includes(s.phase);
+  text("run-detail", s.active ? `@${s.active.handle}` : "");
+  $("run-detail").hidden = !s.active;
   const remaining = Math.max(
     0,
     Math.ceil((s.cooldown_until_ms - Date.now()) / 1000),
@@ -177,8 +152,8 @@ function render(s: Snapshot) {
   text(
     "run-progress",
     cooldown
-      ? `${s.cooldown_reason || "X response limit"} · ${Math.ceil(remaining / 60)}m remaining · resumes automatically`
-      : `${number(checked)} checked · ${number(counts.queue)} queued · ${s.attempts_this_hour}/${s.policy.batch_limit} hourly attempts`,
+      ? `${s.cooldown_reason || "X rate limit"} · ${Math.ceil(remaining / 60)}m remaining`
+      : `${number(checked)} checked · ${number(counts.queue)} queued · ${number(s.removed_total)} removed · ${s.attempts_this_hour}/${s.policy.batch_limit} per hour`,
   );
   const body = $("follower-rows");
   body.replaceChildren();
@@ -232,10 +207,10 @@ function render(s: Snapshot) {
   const empty = $("empty");
   empty.querySelector("h3")!.textContent = s.counts.all
     ? "No accounts in this view"
-    : "Your list starts here";
+    : "No followers loaded";
   empty.querySelector("p")!.textContent = s.counts.all
-    ? "Try another view or search. New results appear as the worker progresses."
-    : "Load your followers, then check activity. Neither step removes anyone.";
+    ? "Try another view or search."
+    : "Load followers to begin.";
   text(
     "page-label",
     s.total
@@ -258,10 +233,24 @@ async function rpc(action: unknown) {
     action,
   });
   if (!response?.ok)
-    throw Error(response?.error ?? "The local worker is unavailable.");
+    throw Error(
+      response?.error ?? "Open remover in your terminal, then connect.",
+    );
   return response.data;
 }
+const loadedVersion = chrome.runtime.getManifest?.().version;
+const pageVersion = document.body.dataset.extensionVersion;
+const needsReload =
+  !!pageVersion && /^\d+\./.test(pageVersion) && loadedVersion !== pageVersion;
+$("reload-extension").addEventListener("click", () => chrome.runtime.reload());
 async function refresh() {
+  if (needsReload) {
+    error("Reload the extension to finish updating.");
+    $("reload-extension").hidden = false;
+    text("live-status", "Update ready");
+    controls();
+    return;
+  }
   if (loading || busy || document.hidden) return;
   loading = true;
   const requestEpoch = epoch;
@@ -276,7 +265,7 @@ async function refresh() {
     connected = false;
     controls();
     $("live-status").classList.remove("online");
-    text("live-status", "○ Waiting for terminal");
+    text("live-status", "○ Disconnected");
     text(
       "sync-label",
       state ? "Connection lost · showing last snapshot" : "Not connected",
@@ -311,7 +300,6 @@ function setView(next: string) {
   view = next;
   page = 0;
   text("view-heading", labels[view]);
-  text("view-description", descriptions[view]);
   document.querySelectorAll<HTMLElement>("#views [data-view]").forEach((n) => {
     n.classList.toggle("active", n.dataset.view === view);
     n.setAttribute("aria-current", n.dataset.view === view ? "page" : "false");

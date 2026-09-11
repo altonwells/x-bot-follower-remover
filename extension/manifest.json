@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Remover",
   "description": "Manage X followers from Chrome or your terminal. Review activity, keep accounts, and control a saved removal queue.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",

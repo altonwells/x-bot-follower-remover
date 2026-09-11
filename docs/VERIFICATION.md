@@ -259,3 +259,9 @@ Validation: all 82 Rust tests, Clippy with warnings denied, formatting, TypeScri
 Simplify review fixed stale manager responses, scan restart state, setup-mode activity dispatch, preserved removal receipts, and immediate monitor control feedback. The latest-post review found no quality/efficiency defects; one redundant coverage assignment was deleted (2 fewer lines). A conditional action-history-query optimization was skipped without performance evidence.
 
 The v0.4.0 release also passed all 9 installer integration tests, the fullscreen PTY lifecycle test, onboarding CLI test, and background process CLI test. Installed binary SHA-256 matches the release bundle; the installed manifest reports 0.4.0. The existing live queue was stopped with progress and cooldown preserved for the update. Chrome requires a manual extension reload on this Mac; no live removal was initiated for verification.
+
+## Compact manager (v0.4.1)
+
+Removed marketing headings, duplicate metric cards, repeated captions, and footer copy. Desktop now keeps the action bar and table on one screen with scrolling confined to the rows. A version mismatch offers a direct Reload extension action before any manager requests; this addresses the old v0.3.2 service worker with newly installed page files.
+
+TypeScript checking and all 82 extension tests pass. The new regression verifies a mismatched loaded version sends no manager requests and the Reload button calls Chrome's reload API. Desktop layout and account details were checked in the browser with fictional accounts and no JavaScript errors. The Rust worker and activity rules are unchanged.

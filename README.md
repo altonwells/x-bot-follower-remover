@@ -55,7 +55,7 @@ Keep the terminal open. Remover checks for the Chrome extension and shows the ne
 1. Press **Enter** in the setup guide. It reveals the extension folder in **Finder**, opens **Chrome's extension manager**, and copies the folder path.
 2. Turn on **Developer mode**. Select **Load unpacked**.
 3. Press **Cmd+Shift+G**, paste the copied path, and select the folder.
-4. Open **Remover**, the extension with the **R** icon. Its manager opens; select **Connection & setup** to see the automatic pairing status.
+4. Open **Remover**, the extension with the **R** icon. Its manager opens; select **Connection** to see the automatic pairing status.
 
 Chrome requires this manual installation step. You do not need to copy a pairing secret.
 
@@ -67,7 +67,7 @@ If you need the folder path:
 
 ### 4. Connect your X account
 
-Select **Connection & setup**, then **Open X** in the extension. Sign in using the **same Chrome profile** where you installed Remover. Return to the terminal and confirm the account shown.
+Select **Connection**, then **Open X** in the extension. Sign in using the **same Chrome profile** where you installed Remover. Return to the terminal and confirm the account shown.
 
 ![Remover Chrome extension connection page](docs/options-preview.png)
 
@@ -136,7 +136,7 @@ Full Auto always uses the 30-day rule and keeps verified accounts, people you fo
 
 ### Processing speed
 
-Select **Processing settings** in Chrome, or press **`,`** in the terminal. Use **↑/↓** to choose a field and **←/→** to change it. **Enter** saves. **Shift+R** restores the starting settings.
+Select **Settings** in Chrome, or press **`,`** in the terminal. Use **↑/↓** to choose a field and **←/→** to change it. **Enter** saves. **Shift+R** restores the starting settings.
 
 | Setting | Starting value |
 | --- | --- |
