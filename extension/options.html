@@ -9,140 +9,112 @@
     <link rel="stylesheet" href="options.css" />
   </head>
   <body data-extension-version="__EXTENSION_VERSION__">
-    <div class="shell">
-      <aside class="sidebar">
-        <a class="brand" href="#" aria-label="Remover home"
-          ><img
-            src="icons/r-48.png"
-            alt=""
-            width="36"
-            height="36"
-          />remover<span>.</span></a
-        >
+    <main class="main">
+      <header class="topbar">
+        <div class="identity">
+          <span class="brand">remover</span
+          ><span id="account-top">No account</span
+          ><span id="live-status">Connecting…</span>
+        </div>
+        <div class="utilities">
+          <button id="settings-open">Settings</button
+          ><button id="connection-open">Connection</button
+          ><small id="version" class="sr-only"></small>
+        </div>
+      </header>
+      <div id="manager-error" role="status" aria-live="polite" hidden></div>
+      <button id="reload-extension" hidden>Reload extension</button>
+      <section id="run-card" class="work" aria-label="Current work" hidden>
+        <span class="work-dot" aria-hidden="true">●</span
+        ><span id="run-title">Ready</span><span id="run-detail"></span
+        ><span id="run-progress"></span>
+        <div class="run-actions">
+          <button id="pause" disabled>Pause</button
+          ><button id="cancel" disabled>Cancel</button>
+        </div>
+      </section>
+      <div class="toolbar">
         <nav id="views" aria-label="Follower views">
-          <button data-view="all" class="nav-item active">
-            <span>◫ &nbsp; All followers</span><b data-count="all">—</b>
+          <button data-view="all" class="active" aria-current="page">
+            All <span data-count="all">—</span>
           </button>
-          <button data-view="keep" class="nav-item">
-            <span>✓ &nbsp; Keeping</span><b data-count="keep">—</b>
+          <button data-view="keep">
+            Keeping <span data-count="keep">—</span>
           </button>
-          <button data-view="remove" class="nav-item">
-            <span>↗ &nbsp; Planned removal</span><b data-count="remove">—</b>
+          <button data-view="remove">
+            Planned <span data-count="remove">—</span>
           </button>
-          <button data-view="review" class="nav-item">
-            <span>◷ &nbsp; Needs a check</span><b data-count="review">—</b>
+          <button data-view="review">
+            Needs check <span data-count="review">—</span>
           </button>
-          <button data-view="queue" class="nav-item">
-            <span>≋ &nbsp; Removal queue</span><b data-count="queue">—</b>
+          <button data-view="queue">
+            Queued <span data-count="queue">—</span>
           </button>
-          <button data-view="removed" class="nav-item">
-            <span>↙ &nbsp; Removed</span><b data-count="removed">—</b>
+          <button data-view="removed">
+            Removed <span data-count="removed">—</span>
           </button>
         </nav>
-        <div class="sidebar-bottom">
-          <button id="settings-open" class="nav-item">⚙ &nbsp; Settings</button
-          ><button id="connection-open" class="nav-item">
-            ⌘ &nbsp; Connection</button
-          ><small id="version"></small>
+        <div class="primary-actions">
+          <button id="collect" disabled>Load followers</button
+          ><button id="inspect" disabled>Check activity</button
+          ><button id="start" disabled>Start cleanup ↗</button>
         </div>
-      </aside>
-      <main class="main">
-        <div class="topbar">
-          <div class="connection-status">
-            <strong id="account-top">No account</strong
-            ><span class="live-status" id="live-status">Connecting…</span>
-          </div>
-          <div class="primary-actions">
-            <button id="collect" class="secondary" disabled>
-              Load followers
-            </button>
-
-            <button id="inspect" class="secondary" disabled>
-              Check activity
-            </button>
-            <button id="start" disabled>Start cleanup</button>
-          </div>
-        </div>
-        <div
-          id="manager-error"
-          class="error-banner"
-          role="status"
-          aria-live="polite"
-          hidden
-        ></div>
-        <button id="reload-extension" class="secondary" hidden>
-          Reload extension
-        </button>
-        <section
-          id="run-card"
-          class="run-card"
-          aria-label="Current work"
-          hidden
+      </div>
+      <div class="filter-strip">
+        <label class="search"
+          ><input
+            id="search"
+            type="search"
+            maxlength="200"
+            placeholder="Search followers…"
+            aria-label="Search followers"
+          /><kbd>/</kbd></label
         >
-          <div class="run-description">
-            <div class="run-title">
-              <strong id="run-title">Ready</strong>
-            </div>
-            <p id="run-detail"></p>
-            <div class="progress-track"><div id="progress-fill"></div></div>
-            <small id="run-progress"></small>
-          </div>
-          <div class="run-actions">
-            <button id="pause" class="secondary" disabled>Pause</button
-            ><button id="cancel" class="quiet" disabled>Cancel</button>
-          </div>
-        </section>
-        <section class="inventory" aria-label="Follower inventory">
-          <div class="inventory-heading">
-            <h2 id="view-heading" class="sr-only">All followers</h2>
-            <label class="search"
-              ><span aria-hidden="true">⌕</span
-              ><input
-                id="search"
-                type="search"
-                maxlength="200"
-                placeholder="Search followers"
-                aria-label="Search followers"
-              /><kbd>/</kbd></label
-            >
-          </div>
-          <div class="filter-strip">
-            <span id="activity-rule" class="rule-tag"
-              >Last post over 30 days ago</span
-            ><span id="verified-rule">✓ Keep verified</span
-            ><span id="following-rule">✓ Keep people you follow</span
-            ><span id="sync-label">Waiting for terminal</span>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Last activity</th>
-                  <th>Posts</th>
-                  <th>Decision</th>
-                  <th class="reason-column">Why</th>
-                  <th><span class="sr-only">Details</span></th>
-                </tr>
-              </thead>
-              <tbody id="follower-rows"></tbody>
-            </table>
-          </div>
-          <div id="empty" class="empty">
-            <div>◫</div>
-            <h3>No followers loaded</h3>
-            <p>Load followers to begin.</p>
-          </div>
-          <div class="pagination">
-            <span id="page-label">0 followers</span>
-            <div>
-              <button id="previous" class="quiet" disabled>← Previous</button
-              ><button id="next" class="quiet" disabled>Next →</button>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
+        <span id="activity-rule">Inactive &gt;30d</span
+        ><span id="verified-rule">Keep verified</span
+        ><span id="following-rule">Keep following</span>
+      </div>
+      <div class="table-scroll">
+        <table aria-labelledby="view-heading">
+          <caption id="view-heading" class="sr-only">
+            All followers
+          </caption>
+          <colgroup>
+            <col class="col-account" />
+            <col class="col-activity" />
+            <col class="col-posts" />
+            <col class="col-followers" />
+            <col class="col-decision" />
+            <col class="col-reason" />
+            <col class="col-more" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col" class="numeric">Last post</th>
+              <th scope="col" class="numeric">Posts</th>
+              <th scope="col" class="numeric">Followers</th>
+              <th scope="col">Status</th>
+              <th scope="col">Reason</th>
+              <th scope="col"><span class="sr-only">Details</span></th>
+            </tr>
+          </thead>
+          <tbody id="follower-rows"></tbody>
+        </table>
+        <div id="empty" class="empty">
+          <h3>No followers loaded</h3>
+          <p>Load followers to begin.</p>
+        </div>
+      </div>
+      <footer class="pagination">
+        <span id="page-label">0 followers</span
+        ><span id="sync-label">Waiting for terminal</span>
+        <div>
+          <button id="previous" disabled>← Previous</button
+          ><button id="next" disabled>Next →</button>
+        </div>
+      </footer>
+    </main>
     <dialog id="connection-dialog" class="connection-dialog">
       <div class="dialog-heading">
         <div>
@@ -319,7 +291,6 @@
     <dialog id="settings-dialog">
       <div class="dialog-heading">
         <div>
-          <p class="eyebrow">YOUR PACE</p>
           <h2>Processing settings</h2>
         </div>
         <button

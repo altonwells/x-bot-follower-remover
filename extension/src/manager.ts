@@ -3,11 +3,18 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 const number = (n: number | null | undefined) =>
   n == null ? "—" : n.toLocaleString();
+const compact = (n: number | null | undefined) =>
+  n == null
+    ? "—"
+    : new Intl.NumberFormat(undefined, {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(n);
 const labels: Record<string, string> = {
   all: "All followers",
   keep: "Keeping",
   remove: "Planned removal",
-  review: "Needs a check",
+  review: "Needs check",
   queue: "Removal queue",
   removed: "Removed",
 };
@@ -56,7 +63,7 @@ function date(ms: number | null | undefined) {
 function activity(row: Row) {
   const a = row.account;
   if (a.last_activity_ms)
-    return `${Math.max(0, Math.floor((Date.now() - a.last_activity_ms) / 86400000))}d ago`;
+    return `${Math.max(0, Math.floor((Date.now() - a.last_activity_ms) / 86400000))}d`;
   return a.checked_at_ms
     ? a.posts === 0
       ? "No posts"
@@ -67,7 +74,16 @@ function badge(row: Row) {
   return el(
     "span",
     `decision ${row.decision}`,
-    `${{ keep: "✓ Keep", remove: "↗ Remove", review: "◷ Check", removed: "✓ Removed" }[row.decision]}`,
+    row.working
+      ? "Working"
+      : row.queued
+        ? "Queued"
+        : {
+            keep: "Keep",
+            remove: "Remove",
+            review: "Needs check",
+            removed: "Removed",
+          }[row.decision],
   );
 }
 function controls() {
@@ -107,22 +123,22 @@ function render(s: Snapshot) {
   state = s;
   connected = true;
   page = s.page;
-  text("activity-rule", `Last post over ${s.policy.inactive_days} days ago`);
+  text("activity-rule", `Inactive >${s.policy.inactive_days}d`);
   text(
     "verified-rule",
-    s.policy.skip_verified ? "✓ Keep verified" : "Verified protection off",
+    s.policy.skip_verified ? "Keep verified" : "Verified protection off",
   );
   text(
     "following-rule",
-    s.policy.skip_following
-      ? "✓ Keep people you follow"
-      : "Following protection off",
+    s.policy.skip_following ? "Keep following" : "Following protection off",
   );
   text("account-top", `@${s.handle}`);
-  document
-    .querySelectorAll<HTMLElement>("[data-count]")
-    .forEach((n) => (n.textContent = number(s.counts[n.dataset.count!] ?? 0)));
-  text("live-status", "● Connected");
+  document.querySelectorAll<HTMLElement>("[data-count]").forEach((n) => {
+    const value = s.counts[n.dataset.count!] ?? 0;
+    n.textContent = compact(value);
+    n.title = number(value);
+  });
+  text("live-status", "Connected");
   $("live-status").classList.add("online");
   const cooldown = s.cooldown_until_ms > Date.now();
   text(
@@ -139,6 +155,7 @@ function render(s: Snapshot) {
     !s.running &&
     !s.pending &&
     !["following", "followers", "inspect"].includes(s.phase);
+  $("run-card").classList.toggle("paused", s.paused || cooldown);
   text("run-detail", s.active ? `@${s.active.handle}` : "");
   $("run-detail").hidden = !s.active;
   const remaining = Math.max(
@@ -147,13 +164,11 @@ function render(s: Snapshot) {
   );
   const counts = s.counts;
   const checked = Math.min(s.checked, counts.all);
-  $("progress-fill").style.width =
-    `${counts.all ? Math.min(100, (checked / counts.all) * 100) : 0}%`;
   text(
     "run-progress",
     cooldown
-      ? `${s.cooldown_reason || "X rate limit"} · ${Math.ceil(remaining / 60)}m remaining`
-      : `${number(checked)} checked · ${number(counts.queue)} queued · ${number(s.removed_total)} removed · ${s.attempts_this_hour}/${s.policy.batch_limit} per hour`,
+      ? `${s.cooldown_reason || "X rate limit"} · ${remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`} remaining`
+      : `${number(checked)} / ${number(counts.all)} checked`,
   );
   const body = $("follower-rows");
   body.replaceChildren();
@@ -162,44 +177,40 @@ function render(s: Snapshot) {
       tr = el("tr", row.working ? "working" : "");
     const identity = el("td"),
       wrap = el("div", "account-cell");
-    wrap.append(
-      el(
-        "span",
-        "avatar",
-        (a.name || a.handle || "?").slice(0, 2).toUpperCase(),
-      ),
-    );
     const name = el("div");
     name.append(
-      el("div", "account-name", a.name || a.handle),
       el(
         "div",
-        "account-handle",
-        `@${a.handle}${a.verified === true ? " · Verified" : ""}`,
+        "account-name",
+        a.name && a.name !== a.handle ? a.name : `@${a.handle}`,
       ),
     );
+    if (a.name && a.name !== a.handle)
+      name.append(el("div", "account-handle", `@${a.handle}`));
     wrap.append(name);
+    if (a.verified === true) wrap.append(el("span", "cell-tag", "Verified"));
+    if (a.i_follow === true) wrap.append(el("span", "cell-tag", "Following"));
     identity.append(wrap);
     const decision = el("td");
     decision.append(badge(row));
     const why = el("td", "reason-column");
     why.append(el("div", "row-reason", row.reason));
-    if (row.working)
-      why.append(el("span", "working-label", s.active_kind ?? "Working"));
-    else if (row.queued)
-      why.append(el("span", "working-label", "In approved queue"));
     const more = el("td"),
       button = el("button", "details-button", "↗");
     button.setAttribute("aria-label", `Details for @${a.handle}`);
     more.append(button);
     tr.append(
       identity,
-      el("td", "", activity(row)),
-      el("td", "", number(a.posts)),
+      el("td", "numeric", activity(row)),
+      el("td", "numeric", compact(a.posts)),
+      el("td", "numeric", compact(a.followers)),
       decision,
       why,
       more,
     );
+    tr.children[1].setAttribute("title", date(a.last_activity_ms));
+    tr.children[2].setAttribute("title", number(a.posts));
+    tr.children[3].setAttribute("title", number(a.followers));
     tr.addEventListener("click", () => showDetails(row));
     body.append(tr);
   }
@@ -265,7 +276,7 @@ async function refresh() {
     connected = false;
     controls();
     $("live-status").classList.remove("online");
-    text("live-status", "○ Disconnected");
+    text("live-status", "Disconnected");
     text(
       "sync-label",
       state ? "Connection lost · showing last snapshot" : "Not connected",
