@@ -81,6 +81,18 @@ class InstallerTest(unittest.TestCase):
         self.assertFalse((self.bin / 'forgive-me').is_symlink())
         self.assertTrue((self.install / '.remover-install').is_file())
 
+    def test_public_downloads_latest_and_pinned_release_without_github_cli(self):
+        tools = self.base / 'tools'
+        tools.mkdir()
+        curl = tools / 'curl'
+        curl.write_text("#!/usr/bin/env python3\nimport sys, shutil, os\nfrom pathlib import Path\na=sys.argv[1:]\nurl=a[-1]\nwith open(os.environ['DOWNLOAD_LOG'], 'a') as log: log.write(url+'\\n')\nshutil.copyfile(Path(os.environ['RELEASE_FIXTURE'])/url.rsplit('/',1)[1], a[a.index('--output')+1])\n")
+        curl.chmod(0o755)
+        self.env.update(PATH=str(tools)+os.pathsep+self.env['PATH'], DOWNLOAD_LOG=str(self.base/'downloads'), RELEASE_FIXTURE=str(ROOT/'dist'))
+        self.run_installer()
+        self.run_installer('--version', f'v{VERSION}')
+        urls = (self.base/'downloads').read_text().splitlines()
+        self.assertEqual(urls, [f'https://github.com/altonwells/x-bot-follower-remover/releases/{release}/{asset}' for release in ['latest/download', f'download/v{VERSION}'] for asset in [ASSET, 'SHA256SUMS']])
+
     def test_bad_checksum_does_not_change_existing_install(self):
         self.install_local()
         before = (self.install / 'bundle/remover').read_bytes()

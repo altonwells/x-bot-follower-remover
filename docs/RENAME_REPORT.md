@@ -74,12 +74,12 @@ Git history is preserved. No tracked filenames or folders contained the old name
 - `install.sh` and `tests/install_test.py`: support old environment overrides and ownership markers, recognize the existing PATH entry, and retire only the owned old command during an in-place upgrade.
 - `README.md`: tell existing users how to stop the old worker and preserve their original data folder.
 - `docs/VERIFICATION.md`: preserve historical command and behavior records.
-- `.git` history and current remote: historical data is not rewritten. The GitHub rename command is supplied for manual execution as requested.
+- `.git` history and current remote: historical data is not rewritten. The GitHub repository was subsequently renamed with user authorization.
 - Ignored old build outputs and old installed files: retained rather than removed speculatively. Current release archives contain the renamed products only.
 
 ## GitHub metadata
 
-The rename, description, and topic commands are in [repo-meta.md](../.github/repo-meta.md). They are provided for manual execution, not run by the installer. Repository visibility remains private.
+The rename, description, and topic commands are in [repo-meta.md](../.github/repo-meta.md). The user subsequently authorized the rename and public visibility; both are applied. The installer does not edit repository settings.
 
 ## Validation
 

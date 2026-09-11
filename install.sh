@@ -1,5 +1,5 @@
 #!/bin/sh
-# Private-release installer. No sudo, build tools, or X credentials required.
+# Public-release installer. No sudo, build tools, or X credentials required.
 set -eu
 
 fail() { printf 'remover: %s\n' "$*" >&2; exit 1; }
@@ -78,12 +78,17 @@ main() {
         cp "$from_dir/$asset" "$download_dir/$asset"
         cp "$from_dir/SHA256SUMS" "$download_dir/SHA256SUMS"
     else
-        need gh
-        gh auth status --hostname github.com >/dev/null 2>&1 || fail 'Run gh auth login first; this is a private GitHub release.'
-        if [ -z "$version" ]; then version=$(gh release view --repo "$repo" --json tagName --jq .tagName); fi
-        case "$version" in v[0-9]*) ;; *) fail 'Expected a version tag such as v0.1.0' ;; esac
-        printf 'Downloading %s from %s…\n' "$version" "$repo"
-        gh release download "$version" --repo "$repo" --pattern "$asset" --pattern SHA256SUMS --dir "$download_dir"
+        need curl
+        if [ -n "$version" ]; then
+            case "$version" in v[0-9]*) ;; *) fail 'Expected a version tag such as v0.3.0' ;; esac
+            case "$version" in *[!a-zA-Z0-9._-]*) fail 'Invalid release tag' ;; esac
+            release_url="https://github.com/$repo/releases/download/$version"
+        else
+            release_url="https://github.com/$repo/releases/latest/download"
+        fi
+        printf 'Downloading %s from %s…\n' "${version:-latest release}" "$repo"
+        curl --fail --location --retry 2 --connect-timeout 15 --proto '=https' --tlsv1.2 --output "$download_dir/$asset" "$release_url/$asset"
+        curl --fail --location --retry 2 --connect-timeout 15 --proto '=https' --tlsv1.2 --output "$download_dir/SHA256SUMS" "$release_url/SHA256SUMS"
     fi
     expected=$(awk -v file="$asset" '$2 == file {print $1}' "$download_dir/SHA256SUMS")
     [ "${#expected}" -eq 64 ] || fail 'Missing or ambiguous release checksum'

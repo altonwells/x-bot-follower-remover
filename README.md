@@ -8,7 +8,7 @@ Remove bot and fake followers from your X (Twitter) account. Free, open source. 
 
 ![Remover terminal showing the 30-day cleanup rule](docs/previews/simple-start.png)
 
-*Product previews use fictional accounts. The current preview command, `remover --demo`, makes no X requests. A live-account `--dry-run` command is not available. The code is MIT licensed; downloads currently require access to the private repository.*
+*Product previews use fictional accounts. The current preview command, `remover --demo`, makes no X requests. A live-account `--dry-run` command is not available. The code and releases are public under the MIT license.*
 
 ## Remove fake followers
 
@@ -27,12 +27,10 @@ Login data stays in Chrome. Progress stays in a local SQLite database. There is 
 
 ## Install
 
-The prebuilt release supports **Apple Silicon macOS** with **Google Chrome**. The private-release installer requires the [GitHub CLI](https://cli.github.com/) and repository access.
+The prebuilt release supports **Apple Silicon macOS** with **Google Chrome**. No GitHub account is required.
 
 ```sh
-brew install gh
-gh auth login
-gh api repos/altonwells/x-bot-follower-remover/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh
+curl -fsSL https://raw.githubusercontent.com/altonwells/x-bot-follower-remover/main/install.sh | sh
 ```
 
 Open a terminal and run:

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Published the repository under the MIT license as altonwells/x-bot-follower-remover.
+- Public installation now uses HTTPS downloads without GitHub authentication.
+
 ## 0.3.0
 
 - Renamed project to x-bot-follower-remover.
