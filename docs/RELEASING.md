@@ -4,7 +4,7 @@ The installer uses authenticated GitHub release downloads from `altonwells/forgi
 
 The first prebuilt target is Apple Silicon macOS. Build on that target with Rust 1.88+, Node 22+, npm and Python 3. No development tools are needed by installed users.
 
-1. Update the version in Cargo.toml and extension/package.json / manifest.json when making a new release; regenerate the lockfiles as appropriate.
+1. Update the version in Cargo.toml and extension/package.json / manifest.json when making a new release; regenerate the lockfiles as appropriate. In package-lock.json, update only the top-level version and packages[""].version; never replace version substrings across dependency entries.
 2. Run `cargo test --locked`, `cargo clippy --locked --all-targets -- -D warnings`, and the extension's `npm ci`, `npm run check`, and `npm test`.
 3. Run `./scripts/package.sh`, then `python3 tests/install_test.py` on Apple Silicon. The installer test compares the binary version with Cargo.toml.
 4. Commit all source changes and push main. Create and push the matching version tag, for example `v0.1.0`.

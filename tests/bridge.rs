@@ -60,6 +60,20 @@ async fn pairs_pins_origin_and_roundtrips_commands() {
         Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     );
     ws.send(Message::Text(
+        json!({"type":"x_page_ready","session_id":session_id})
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    assert!(matches!(
+        timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap(),
+        BridgeEvent::Message(forgive_me::protocol::ClientMessage::XPageReady { .. })
+    ));
+    ws.send(Message::Text(
         json!({"type":"heartbeat","session_id":"stale"})
             .to_string()
             .into(),

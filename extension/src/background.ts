@@ -288,15 +288,16 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.runtime.onStartup.addListener(() => {
   void connect().catch(() => {});
 });
-// Recheck identity after X loads, only before an account session is established.
+// Page readiness is a hint to the controller, never a reason to tear down pairing.
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   if (
     change.status === "complete" &&
     tab.url?.startsWith("https://x.com/") &&
     socket?.readyState === WebSocket.OPEN &&
-    !accountHandle
+    !accountHandle &&
+    session
   ) {
-    void connect("retry").catch(() => {});
+    send({ type: "x_page_ready", session_id: session });
   }
 });
 void connect().catch(() => {});

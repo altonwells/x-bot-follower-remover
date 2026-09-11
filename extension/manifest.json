@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "forgive-me",
   "description": "Browser workloads for the forgive-me terminal follower cleaner. All account actions are controlled from your local TUI.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",

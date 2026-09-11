@@ -1,12 +1,10 @@
-forgive-me v0.1.5 replaces the page-by-page pairing guide with setup driven by the live connection.
+forgive-me v0.1.6 fixes interruption of the X account check during page loads.
 
-- One primary Enter action opens the next required screen.
-- Terminal, Chrome, and X account status show what is ready and what is missing.
-- Setup advances only after Chrome connects and X identifies the account. Arrow keys cannot skip these checks.
-- Disconnect returns to pairing. Press i there to install or reload; no backward navigation is needed.
-- The layout is centered and compact, with a fixed action bar. Small terminals show a scroll hint and keep actions visible.
-- Manual repair stays available. Opening setup pauses work; confirming the account does not start a scan or removals.
+- X page completion sends a readiness notification instead of disconnecting and reconnecting the extension.
+- The terminal lets an active identity check finish. A queued readiness event can cause one retry after a recoverable failure. It does not retry a successful check or a rate limit, access denial, or account change.
+- The terminal shows the actual account-check error and lets Enter retry while Chrome stays paired. Rate-limit cooldowns stay in effect during setup navigation and reconnection.
+- The readiness notification cannot start scans, removals, or other cleanup work.
 
-Quit and reopen forgive-me to use the new wizard. Press Shift+P if the follower list is already open. The Chrome pairing mechanism is unchanged from v0.1.4.
+Update both parts: quit and reopen forgive-me, then Reload the extension in chrome://extensions. Keep the TUI open and refresh your signed-in X tab. Older terminals do not understand the new page-ready notification.
 
-Verification uses synthetic connection events, rendered previews, an actual pseudo-terminal, native messaging integration, and installer tests. No live X account was scanned or modified.
+The reconnect regression was reproduced in a test before the fix. Tests use synthetic X responses and local connections. Live X compatibility remains unverified, and no account was scanned or modified.

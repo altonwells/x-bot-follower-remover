@@ -148,7 +148,7 @@ async fn connection(
                     Message::Text(text)=>{
                         let msg:ClientMessage=serde_json::from_str(&text)?;
                         let received_session=match &msg {
-                            ClientMessage::Heartbeat{session_id}|ClientMessage::Result{session_id,..}|ClientMessage::Recovery{session_id,..}=>session_id,
+                            ClientMessage::Heartbeat{session_id}|ClientMessage::XPageReady{session_id}|ClientMessage::Result{session_id,..}|ClientMessage::Recovery{session_id,..}=>session_id,
                             ClientMessage::Hello{..}=>bail!("Unexpected pairing message"),
                         };
                         if received_session!=&session_id { bail!("Stale session rejected"); }

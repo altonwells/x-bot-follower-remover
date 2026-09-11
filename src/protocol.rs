@@ -74,6 +74,9 @@ pub enum ClientMessage {
     Heartbeat {
         session_id: String,
     },
+    XPageReady {
+        session_id: String,
+    },
     Result {
         session_id: String,
         command_id: String,

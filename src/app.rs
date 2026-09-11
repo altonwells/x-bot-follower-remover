@@ -504,10 +504,10 @@ impl App {
                 crate::setup::open_chrome("chrome://extensions".into()).await?;
                 self.log("Folder copied. In Chrome, Load unpacked or Reload forgive-me. Waiting for connection.");
             }
-            KeyCode::Char('o') if self.sender.is_none() || setup.manual => {
+            KeyCode::Char('o') => {
                 let id = crate::native::extension_id(&setup.extension_dir)?;
                 crate::setup::open_chrome(format!("chrome-extension://{id}/options.html")).await?;
-                if !setup.manual {
+                if !setup.manual && self.sender.is_none() {
                     setup.go(Step::Pair);
                 }
                 self.log("Extension opened. Follow the instructions above.");
@@ -531,6 +531,11 @@ impl App {
                 {
                     self.mode = Mode::Browse;
                     self.log("Account confirmed. Press s to scan your followers.");
+                } else if self.sender.is_some()
+                    && setup.account_error.is_some()
+                    && key.code == KeyCode::Enter
+                {
+                    self.check_session().await?;
                 } else if self.sender.is_some() {
                     if self.pending.is_none() || key.code == KeyCode::Char('b') {
                         crate::setup::open_chrome("https://x.com/".into()).await?;
@@ -563,13 +568,28 @@ impl App {
             }
             KeyCode::Up | KeyCode::PageUp => setup.scroll = setup.scroll.saturating_sub(1),
             KeyCode::Char('r') if self.sender.is_some() && self.pending.is_none() => {
-                setup.go(Step::Connect);
-                self.handle.clear();
-                self.submit(Command::GetSession).await?;
-                self.log("Checking the signed-in X account…");
+                self.check_session().await?;
             }
             _ => {}
         }
+        Ok(())
+    }
+    async fn check_session(&mut self) -> Result<()> {
+        if self
+            .setup
+            .as_ref()
+            .and_then(|s| s.retry_at_ms)
+            .is_some_and(|t| t > now_ms())
+        {
+            bail!("X asked us to wait. Retry after the current cooldown.");
+        }
+        if let Some(setup) = self.setup.as_mut() {
+            setup.go(Step::Connect);
+            setup.account_error = None;
+        }
+        self.handle.clear();
+        self.submit(Command::GetSession).await?;
+        self.log("Checking the signed-in X account…");
         Ok(())
     }
     fn adjust(&mut self, d: i32) {
@@ -695,8 +715,7 @@ impl App {
                 self.session = session_id;
                 self.pending = None;
                 self.paused = true;
-                self.submit(Command::GetSession).await?;
-                self.log("Chrome connected. Checking signed-in account…");
+                self.check_session().await?;
             }
             BridgeEvent::Disconnected(message) => {
                 if self.mode == Mode::Setup {
@@ -713,6 +732,29 @@ impl App {
                 self.refresh_counts().await?;
                 self.log(message);
             }
+            BridgeEvent::Message(ClientMessage::XPageReady { .. }) => {
+                if self.mode == Mode::Setup
+                    && self.sender.is_some()
+                    && self.handle.is_empty()
+                    && self
+                        .setup
+                        .as_ref()
+                        .and_then(|s| s.retry_at_ms)
+                        .is_none_or(|t| t <= now_ms())
+                {
+                    if self
+                        .pending
+                        .as_ref()
+                        .is_some_and(|w| matches!(w.command, Command::GetSession))
+                    {
+                        if let Some(setup) = self.setup.as_mut() {
+                            setup.recheck_requested = true;
+                        }
+                    } else if self.pending.is_none() {
+                        self.check_session().await?;
+                    }
+                }
+            }
             BridgeEvent::Message(ClientMessage::Result {
                 command_id, result, ..
             }) => {
@@ -722,8 +764,18 @@ impl App {
                     .is_some_and(|w| w.command_id == command_id)
                 {
                     let w = self.pending.take().unwrap();
+                    let identity = matches!(w.command, Command::GetSession);
+                    let can_retry = matches!(&result, WorkResult::Error { code, retry_at_ms: None, .. }
+                        if !matches!(code.as_str(), "rate_limited" | "access_denied" | "account_changed"));
+                    let queued = self.setup.as_ref().is_some_and(|s| s.recheck_requested);
+                    if identity && let Some(setup) = self.setup.as_mut() {
+                        setup.recheck_requested = false;
+                    }
                     self.apply_result(&w, result).await?;
                     self.ack(&command_id).await?;
+                    if identity && queued && can_retry && self.mode == Mode::Setup {
+                        self.check_session().await?;
+                    }
                 }
             }
             BridgeEvent::Message(ClientMessage::Recovery { work, result, .. }) => {
@@ -965,6 +1017,12 @@ impl App {
                     .await?;
                 }
                 self.paused = true;
+                if matches!(w.command, Command::GetSession)
+                    && let Some(setup) = self.setup.as_mut()
+                {
+                    setup.account_error = Some(format!("{}: {}", clean(&code), clean(&message)));
+                    setup.retry_at_ms = retry_at_ms;
+                }
                 let task = match &w.command {
                     Command::ScanPage { list, .. } => format!("{list} collection"),
                     Command::InspectAccount { .. } => "activity check".into(),

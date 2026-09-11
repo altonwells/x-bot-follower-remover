@@ -24,11 +24,16 @@ If automatic pairing fails:
 The pairing secret gives the extension access to the local app. Keep it private.
 Manual connection settings remain in use until you select **Connect automatically**.
 
-If the terminal cannot identify your X account:
+If Chrome is paired but the terminal cannot identify your X account:
 
-1. Refresh the signed-in X tab.
-2. Select **Refresh X discovery** in the extension settings.
-3. Press `r` in the terminal's connection guide.
+1. Read the error in the **X account check failed** panel.
+2. For a login or missing-tab error, press `b` and sign in to X in this Chrome profile.
+3. For an operation or signing error, press `o` to open the extension. Expand **Manual connection and repair** and select **Refresh X discovery**.
+4. Press Enter or `r` in the terminal to retry the account check.
+
+A page load does not disconnect Chrome. If a check is running, the app lets it finish.
+A new page can trigger one retry after a recoverable failure.
+Rate limits require waiting. Reconnecting is not a way to resolve an X access denial.
 
 The guide stays paused. Removal controls are not active there.
 A connection or reconnection does not automatically continue work.
@@ -117,7 +122,7 @@ export PATH="$HOME/.local/bin:$PATH"
 To install a specific release:
 
 ```sh
-gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.5
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.6
 ```
 
 To install a local package from the repository folder:

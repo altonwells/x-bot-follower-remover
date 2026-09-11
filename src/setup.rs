@@ -28,6 +28,9 @@ pub struct Setup {
     pub revealed: bool,
     pub manual: bool,
     pub scroll: u16,
+    pub recheck_requested: bool,
+    pub account_error: Option<String>,
+    pub retry_at_ms: Option<i64>,
 }
 impl Setup {
     pub fn new(config: &Config) -> Self {
@@ -43,6 +46,9 @@ impl Setup {
             revealed: false,
             manual: false,
             scroll: 0,
+            recheck_requested: false,
+            account_error: None,
+            retry_at_ms: None,
         }
     }
     pub fn go(&mut self, step: Step) {
@@ -50,6 +56,10 @@ impl Setup {
         self.revealed = false;
         self.manual = false;
         self.scroll = 0;
+        self.recheck_requested = false;
+        if step == Step::Ready {
+            self.account_error = None;
+        }
     }
 }
 
@@ -208,6 +218,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         if app.pending.is_some() {
             (" Identifying your account ", "Chrome is paired. Checking the signed-in X account.\n\nThis screen advances when the account is identified.".into(),
             "Checking X…", "b open X  q quit")
+        } else if let Some(error) = &setup.account_error {
+            (
+                " X account check failed ",
+                format!(
+                    "{error}\n\nChrome is still paired. Press b to open X, or o to open\nthe extension's repair settings."
+                ),
+                "Enter  Retry account check",
+                "b open X  o extension  r retry  q quit",
+            )
         } else {
             (" Sign in to X ", "Open X in this Chrome profile and sign in.\n\nThe extension checks again when the page loads.\nAlready signed in? Press r to check again.".into(),
             "Enter  Open X", "r recheck account  m repair  q quit")

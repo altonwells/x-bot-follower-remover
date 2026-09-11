@@ -132,5 +132,12 @@ fn main() {
     app.notice = "Pair with your Chrome extension to continue.".into();
     scenes.push(capture(&mut app, "pairing", 120, 34));
     scenes.push(capture(&mut app, "pairing-minimum", 52, 12));
+    let (tx, _rx) = tokio::sync::mpsc::channel(8);
+    app.sender = Some(tx);
+    app.setup.as_mut().unwrap().go(Step::Connect);
+    app.setup.as_mut().unwrap().account_error =
+        Some("signing_unavailable: X request signing could not be prepared.".into());
+    app.notice = "Chrome is paired. Retry the X check after refreshing discovery.".into();
+    scenes.push(capture(&mut app, "account-error", 120, 34));
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }

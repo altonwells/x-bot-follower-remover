@@ -108,3 +108,21 @@ The centered setup panel uses a fixed primary action, live terminal/Chrome/accou
 `cargo test --offline --locked` exited 0 (34 tests passed). `cargo clippy --offline --all-targets -- -D warnings`, `npm ci --offline`, and `npm run check` exited 0; `npm test` reported `tests 49`, `pass 49`, `fail 0`. Three new setup regressions cover navigation/state gating, waiting during identity checks and reopening setup, and scroll clamping across resize.
 
 Simplify review: reuse and efficiency found no worthwhile abstraction or performance change. Quality replaced misleading automatic-pairing text in the manual repair path with neutral guidance (net 0 lines). The compact scroll hint and scroll clamping were handled as separate usability fixes. The focused baseline passed 29 tests; the final focused suite passed 30, including the added scroll test. Clippy exited 0 before and after review. Live Chrome interaction and live X compatibility were not exercised; no account was scanned or modified.
+
+## X account check interruption (v0.1.6)
+
+The automatic pairing update added a page-completion listener that called connect again while accountHandle was empty. This closed the authenticated bridge and cancelled the browser reader, including an in-progress account discovery/profile check. The new worker regression failed before the fix (`2 !== 1`: two sockets instead of one) and passes afterward with one authenticated socket plus an x_page_ready notification.
+
+Page-ready notifications are validated against the bridge session. During setup only, the terminal requests identity if idle; while identity is running it coalesces notifications into one queued retry. Success, rate limits, access denials, and account changes do not trigger that queued retry. Reconnect uses the same cooldown guard as manual retry. No page event starts cleanup. Account failures now retain their actual error code and message in a dedicated panel while Chrome stays paired.
+
+History comparison also found that the pre-hardening session implementation swallowed most profile errors and substituted a numeric owner ID for the handle. That fallback was removed during X adapter hardening. It was not restored: a reported connection must identify the account successfully.
+
+An operation-specific discovery optimization was considered and removed during review because the TUI's removal availability depends on the complete capability snapshot. The final X request, discovery, eligibility, and removal implementations are unchanged in this release. Simplify review reused check_session for initial reconnect as well as manual and queued retries (net −1 line at the reconnect call site). Quality tests cover cooldown preservation; no broader state abstraction was added.
+
+References consulted: [Chrome tabs events](https://developer.chrome.com/docs/extensions/reference/api/tabs) and [script injection behavior](https://developer.chrome.com/docs/extensions/reference/api/scripting). These document page events and script execution, not live compatibility with X's private interface.
+
+Verification: the unchanged extension baseline passed 49 tests; the new regression failed against the original listener and the final suite passed 50. npm ci --offline and npm run check exited 0. The final Rust suite passed 37 tests, including three new setup tests and an authenticated bridge round trip for x_page_ready. cargo clippy --offline --all-targets -- -D warnings exited 0. The account-error preview was rendered and visually inspected with synthetic data.
+
+The user has not yet supplied the exact live X error. The reproduced reconnect defect is confirmed; whether an additional API, signing, or authentication failure affects this account remains unverified. No live browser state or X account was changed by testing.
+
+Final release inspection corrected an accidental version-string substitution in the Chrome type dependency lock entry. Its version and URL now agree with the installed package and unchanged integrity hash (0.1.43). Future release versions must update only the package's own version fields.

@@ -41,7 +41,10 @@ async function harness(
     close() {
       this.onclose?.();
     }
-    send() {}
+    sent: any[] = [];
+    send(value: string) {
+      this.sent.push(JSON.parse(value));
+    }
   }
   vm.runInNewContext(code, {
     Promise,
@@ -182,4 +185,25 @@ test("a new manual request persists after an already-running automatic storage w
     ["ws://127.0.0.1:49000/bridge"],
   );
   assert.equal(h.settings().port, 49000);
+});
+
+test("X page completion keeps the authenticated bridge and asks for an account recheck", async () => {
+  const h = await harness();
+  const ws = h.sockets.at(-1);
+  ws.onmessage({
+    data: JSON.stringify({ type: "welcome", v: 1, session_id: "test-session" }),
+  });
+  await flush();
+  h.xLoaded();
+  await flush();
+  assert.equal(
+    h.sockets.length,
+    1,
+    "page readiness must not disconnect or cancel an account check",
+  );
+  assert(
+    ws.sent.some(
+      (m: any) => m.type === "x_page_ready" && m.session_id === "test-session",
+    ),
+  );
 });

@@ -244,3 +244,141 @@ async fn wizard_scroll_clamps_and_recovers_after_resize() {
     screen(&mut app, 140, 42);
     assert_eq!(app.setup.as_ref().unwrap().scroll, 0);
 }
+
+async fn page_ready(app: &mut App) {
+    app.bridge_event(BridgeEvent::Message(ClientMessage::XPageReady {
+        session_id: "browser".into(),
+    }))
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn page_load_during_identity_check_does_not_cancel_and_retries_only_once() {
+    let mut app = app();
+    let (tx, mut rx) = mpsc::channel(16);
+    app.bridge_event(BridgeEvent::Connected {
+        session_id: "browser".into(),
+        sender: tx,
+    })
+    .await
+    .unwrap();
+    let initial = app.pending.as_ref().unwrap().command_id.clone();
+    rx.recv().await.unwrap();
+    page_ready(&mut app).await;
+    page_ready(&mut app).await;
+    assert_eq!(app.pending.as_ref().unwrap().command_id, initial);
+    assert!(rx.try_recv().is_err());
+    result(
+        &mut app,
+        WorkResult::Error {
+            code: "login_required".into(),
+            message: "Sign in".into(),
+            retry_at_ms: None,
+        },
+    )
+    .await;
+    assert_eq!(rx.recv().await.unwrap()["type"], "ack");
+    assert_eq!(
+        rx.recv().await.unwrap()["work"]["command"]["kind"],
+        "get_session"
+    );
+    assert_ne!(app.pending.as_ref().unwrap().command_id, initial);
+    result(
+        &mut app,
+        WorkResult::Error {
+            code: "signing_unavailable".into(),
+            message: "Signing failed".into(),
+            retry_at_ms: None,
+        },
+    )
+    .await;
+    assert_eq!(rx.recv().await.unwrap()["type"], "ack");
+    assert!(rx.try_recv().is_err());
+    assert!(app.sender.is_some() && app.pending.is_none() && app.paused);
+    assert!(screen(&mut app, 94, 26).contains("signing_unavailable: Signing failed"));
+    press(&mut app, KeyCode::Enter).await;
+    assert_eq!(
+        rx.recv().await.unwrap()["work"]["command"]["kind"],
+        "get_session"
+    );
+}
+
+#[tokio::test]
+async fn page_readiness_never_retries_success_or_rate_limits_or_starts_cleanup() {
+    for limited in [false, true] {
+        let mut app = app();
+        let (tx, mut rx) = mpsc::channel(16);
+        app.bridge_event(BridgeEvent::Connected {
+            session_id: "browser".into(),
+            sender: tx,
+        })
+        .await
+        .unwrap();
+        rx.recv().await.unwrap();
+        page_ready(&mut app).await;
+        result(
+            &mut app,
+            if limited {
+                WorkResult::Error {
+                    code: "rate_limited".into(),
+                    message: "Wait".into(),
+                    retry_at_ms: Some(forgive_me::model::now_ms() + 60_000),
+                }
+            } else {
+                WorkResult::Session {
+                    owner_id: "1".into(),
+                    handle: "example".into(),
+                    capabilities: vec!["adapter:2".into()],
+                }
+            },
+        )
+        .await;
+        rx.recv().await.unwrap();
+        page_ready(&mut app).await;
+        assert!(app.pending.is_none() && app.paused && rx.try_recv().is_err());
+        app.mode = Mode::Browse;
+        app.handle.clear();
+        page_ready(&mut app).await;
+        assert!(app.pending.is_none() && rx.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn reconnect_preserves_identity_rate_limit_without_another_request() {
+    let mut app = app();
+    let (tx, mut rx) = mpsc::channel(16);
+    app.bridge_event(BridgeEvent::Connected {
+        session_id: "browser".into(),
+        sender: tx,
+    })
+    .await
+    .unwrap();
+    rx.recv().await.unwrap();
+    result(
+        &mut app,
+        WorkResult::Error {
+            code: "rate_limited".into(),
+            message: "Wait".into(),
+            retry_at_ms: Some(forgive_me::model::now_ms() + 60_000),
+        },
+    )
+    .await;
+    rx.recv().await.unwrap();
+    app.bridge_event(BridgeEvent::Disconnected("test reconnect".into()))
+        .await
+        .unwrap();
+    let (tx, mut rx) = mpsc::channel(16);
+    let error = app
+        .bridge_event(BridgeEvent::Connected {
+            session_id: "new-browser".into(),
+            sender: tx,
+        })
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("cooldown"));
+    assert!(screen(&mut app, 94, 26).contains("rate_limited: Wait"));
+    page_ready(&mut app).await;
+    assert!(app.sender.is_some() && app.pending.is_none());
+    assert!(rx.try_recv().is_err());
+}
