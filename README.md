@@ -191,7 +191,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.6 passed automated, terminal, and installer tests.
+Version 0.1.7 passed automated, terminal, and installer tests.
 The updated X integration still needs a new scan on a real account.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).

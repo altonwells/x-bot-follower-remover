@@ -19,6 +19,13 @@ export function scriptReferences(text: string, base: string): string[] {
     const url = assetURL(m[1], base);
     if (url) found.add(url);
   }
+  // Vite can use bare relative chunk names, without a ./ prefix.
+  for (const m of text.matchAll(
+    /["'`]((?:(?:\.{0,2}\/)?[\w./-]*\/)?(?:ondemand\.s|sign\.o)[\w.-]*\.js(?:\?[^"'`\s]*)?)["'`]/g,
+  )) {
+    const url = assetURL(m[1], base);
+    if (url) found.add(url);
+  }
   // Legacy webpack's runtime pairs chunk names with seven- or sixteen-digit hashes.
   const names = new Map<string, string>(),
     hashes = new Map<string, string>();

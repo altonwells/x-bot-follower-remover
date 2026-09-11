@@ -10,7 +10,7 @@ export interface SigningKey {
 }
 
 export function signingIndices(script: string): number[] {
-  return [...script.matchAll(/\(\w+\[(\d{1,2})\],\s*16\)/g)].map((m) =>
+  return [...script.matchAll(/\([\w$]+\[(\d{1,2})\],\s*16\)/g)].map((m) =>
     Number(m[1]),
   );
 }
@@ -70,14 +70,22 @@ export function prepareSigning(
   seed: SigningSeed,
   indices: number[],
 ): SigningKey {
-  const bytes = [...atob(seed.key)].map((c) => c.charCodeAt(0));
+  if (!seed.key) throw Error("verification key missing");
+  if (seed.frames.length !== 4)
+    throw Error(`expected 4 animation frames, found ${seed.frames.length}`);
+  if (indices.length < 2)
+    throw Error("signing byte indices missing from script");
+  let bytes: number[];
+  try {
+    bytes = [...atob(seed.key)].map((c) => c.charCodeAt(0));
+  } catch {
+    throw Error("verification key is not valid base64");
+  }
   if (
     bytes.length < 6 ||
     bytes.length > 128 ||
-    indices.length < 2 ||
     indices.length > 8 ||
-    indices.some((i) => i >= bytes.length) ||
-    seed.frames.length !== 4
+    indices.some((i) => i >= bytes.length)
   )
     throw Error(
       "X signing ingredients unavailable; refresh your signed-in X tab",

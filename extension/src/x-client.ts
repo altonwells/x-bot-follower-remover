@@ -1,3 +1,4 @@
+import { readSigningPage } from "./page-seed";
 import {
   OPERATIONS,
   discoverOperations,
@@ -140,42 +141,7 @@ export class XClient {
       throw new XError("tab_required", "Open an X tab in this Chrome profile.");
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => ({
-        scripts: [
-          ...new Set([
-            ...Array.from(document.scripts, (s) => s.src),
-            ...Array.from(
-              document.querySelectorAll<HTMLLinkElement>(
-                'link[rel="modulepreload"]',
-              ),
-              (s) => s.href,
-            ),
-            ...performance.getEntriesByType("resource").map((r) => r.name),
-          ]),
-        ]
-          .filter(
-            (u) =>
-              /^https:\/\/abs\.twimg\.com\/(?:responsive-web|x-web)\//.test(
-                u,
-              ) && /\.js(?:\?|$)/.test(u),
-          )
-          .slice(0, 200),
-        inline: Array.from(document.scripts)
-          .filter((s) => !s.src)
-          .map((s) => s.textContent ?? "")
-          .join("\n")
-          .slice(0, 2_000_000),
-        key:
-          document
-            .querySelector('meta[name="twitter-site-verification"]')
-            ?.getAttribute("content") ?? "",
-        frames: Array.from(
-          document.querySelectorAll(
-            'svg[id^="loading-x-anim"] g:first-child path:nth-child(2)',
-          ),
-          (p) => p.getAttribute("d") ?? "",
-        ),
-      }),
+      func: readSigningPage,
     });
     const page = results[0]?.result;
     if (!page)
@@ -183,7 +149,15 @@ export class XClient {
         "discovery_required",
         "Could not read X's page; refresh the signed-in X tab.",
       );
+    this.assertRead(epoch);
+    if (page.error) throw new XError(page.code, page.error, page.retryAt);
     if (force) this.signing = null;
+    let signingFailure = !page.key
+      ? "verification key missing"
+      : page.frames.length !== 4
+        ? `expected 4 animation frames, found ${page.frames.length}`
+        : "signing script not found";
+    let loaded = 0;
     const queue = new Set<string>(
       [
         ...page.scripts,
@@ -193,6 +167,7 @@ export class XClient {
         ),
       ].filter((u) => assetURL(u)),
     );
+    if (!this.signing && (!page.key || page.frames.length !== 4)) queue.clear();
     const seen = new Set<string>();
     const deadline = Date.now() + 20_000;
     while (queue.size && seen.size < 64 && Date.now() < deadline) {
@@ -224,6 +199,7 @@ export class XClient {
         throw new XError("cancelled", "Discovery paused.");
       for (const asset of scripts) {
         if (!asset) continue;
+        loaded++;
         const { url, script } = asset;
         for (const ref of scriptReferences(script, url))
           if (!seen.has(ref) && queue.size < 1000) queue.add(ref);
@@ -236,8 +212,9 @@ export class XClient {
         if (!this.signing && signingAsset(url)) {
           try {
             this.signing = prepareSigning(page, signingIndices(script));
-          } catch {
-            /* Report unavailable signing before any API dispatch. */
+          } catch (error) {
+            signingFailure =
+              error instanceof Error ? error.message : "invalid signing data";
           }
         }
         if (!this.bearer) {
@@ -264,6 +241,11 @@ export class XClient {
       )
         break;
     }
+    if (!this.signing)
+      throw new XError(
+        "signing_unavailable",
+        `Signing setup failed: ${signingFailure}. Source: ${page.source ?? "document"}; key: ${page.key ? "present" : "missing"}; frames: ${page.frames.length}; assets: ${loaded} loaded, ${seen.size - loaded} failed.`,
+      );
     this.discoveryAt = Date.now();
     await chrome.storage.session.set({
       adapterRevision: 2,

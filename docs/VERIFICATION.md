@@ -126,3 +126,19 @@ Verification: the unchanged extension baseline passed 49 tests; the new regressi
 The user has not yet supplied the exact live X error. The reproduced reconnect defect is confirmed; whether an additional API, signing, or authentication failure affects this account remains unverified. No live browser state or X account was changed by testing.
 
 Final release inspection corrected an accidental version-string substitution in the Chrome type dependency lock entry. Its version and URL now agree with the installed package and unchanged integrity hash (0.1.43). Future release versions must update only the package's own version fields.
+
+## Signing-page recovery (v0.1.7)
+
+The user's screenshot now identifies signing_unavailable as the account-check failure. Comparison with the pinned twscrape and twikit implementations found that they obtain the verification key and four animation SVG paths from the original home HTML. Our collector relied only on the hydrated page. The collector now fetches and inertly parses X home inside Chrome when the live page has lost those ingredients. It never combines a new HTML key with old page frames. Login-like responses stay unusable, HTTP 429 preserves a cooldown, and missing ingredients stop asset and API requests.
+
+Static discovery now accepts bare relative signing filenames and byte-index variables containing a dollar sign. Detailed diagnostics report the source, ingredient presence, and successful/failed asset counts without exposing keys, cookies, or raw HTML. Existing action authorization and account identity checks remain in force.
+
+The regression executes the serialized collector in a separate JavaScript context with an HTML parser, then exercises the real adapter through account identification using a synthetic API response. It covers a hydrated page with no SVGs, a fresh original HTML response, a bare signing chunk, and the generated transaction header. Linkedom is a development-only test dependency; it is not included in the Chrome runtime bundle.
+
+A separate read-only probe fetched current public X home HTML without account cookies, then used the actual asset discovery and signing modules. It found all four SVGs, fetched four allowed static assets without errors, extracted four indices from ondemand.s.d213e36fda69a590a.js, and generated a transaction ID. The probe did not send an authenticated API request. This validates current public asset parsing and signing generation, not X's acceptance for the user's signed-in session.
+
+References: [twscrape signing implementation](https://github.com/vladkens/twscrape/blob/main/twscrape/xclid.py) and [XClientTransaction example](https://github.com/iSarabjitDhiman/XClientTransaction/blob/master/quickstart.py). Existing MIT attribution is retained.
+
+Simplify review removed duplicate seed validations and a derivable failed-asset counter, and skips futile asset downloads when the seed is unusable (net −5 implementation lines). Baseline and final extension checks each passed 54 tests; TypeScript exited 0. No speculative refactor was added.
+
+Release checks: cargo test --offline --locked exited 0 (37 passed); cargo clippy --offline --all-targets -- -D warnings exited 0. npm ci --offline and npm run check exited 0; npm test reported tests 54, pass 54, fail 0. The release build and extension bundle passed. The installer suite reported Ran 7 tests, OK; the release PTY suite reported Ran 1 test, OK. The added no-download assertion initially included the fixture's successful setup requests; clearing those before removing the seed corrected the test without changing implementation.

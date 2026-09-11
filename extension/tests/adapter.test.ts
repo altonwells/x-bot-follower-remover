@@ -202,9 +202,20 @@ test("403 and rate limits are not retried as stale queries", async (t) => {
 test("missing signing data prevents API dispatch and session readiness", async (t) => {
   const f = await fixture(t, () => Response.json({}));
   f.removeSeed();
-  await f.client.discover(true);
-  await assert.rejects(f.client.session(), /signing could not be prepared/);
-  assert.equal(f.calls.filter((c) => c.url.host === "x.com").length, 0);
+  f.calls.length = 0;
+  await assert.rejects(
+    f.client.discover(true),
+    /expected 4 animation frames, found 0/,
+  );
+  await assert.rejects(
+    f.client.session(),
+    /expected 4 animation frames, found 0/,
+  );
+  assert.equal(
+    f.calls.length,
+    0,
+    "missing page ingredients need no asset or API requests",
+  );
 });
 test("pausing during a failed read prevents rediscovery and retry", async (t) => {
   const f = await fixture(t, () => {
