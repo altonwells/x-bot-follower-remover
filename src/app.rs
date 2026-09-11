@@ -829,7 +829,7 @@ impl App {
             KeyCode::Char('i') if self.sender.is_none() => {
                 setup.go(Step::Install);
                 crate::setup::open_install(&setup.extension_dir).await?;
-                self.log("Folder copied. In Chrome, Load unpacked or Reload remover. Waiting for connection.");
+                self.log("Finder and Chrome opened. Load unpacked or Reload Remover. Waiting for connection.");
             }
             KeyCode::Char('o') => {
                 crate::setup::open_options(&setup.extension_dir).await?;
@@ -873,7 +873,7 @@ impl App {
                     }
                 } else if setup.step == Step::Install {
                     crate::setup::open_install(&setup.extension_dir).await?;
-                    self.log("Folder copied. Load unpacked in Chrome. Waiting for the extension to connect.");
+                    self.log("Finder and Chrome opened. Load unpacked in Chrome. The folder path is copied.");
                 } else {
                     crate::setup::open_options(&setup.extension_dir).await?;
                     self.log("Select Connect terminal in the extension. Waiting for connection.");

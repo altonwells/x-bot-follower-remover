@@ -52,7 +52,7 @@ Keep the terminal open. Remover checks for the Chrome extension and shows the ne
 
 ### 3. Add the Chrome extension
 
-1. Press **Enter** in the setup guide. It opens Chrome's extension page and copies the correct folder path.
+1. Press **Enter** in the setup guide. It reveals the extension folder in **Finder**, opens **Chrome's extension manager**, and copies the folder path.
 2. Turn on **Developer mode**. Select **Load unpacked**.
 3. Press **Cmd+Shift+G**, paste the copied path, and select the folder.
 4. Open **Remover**, the extension with the **R** icon. Its connection page pairs with the terminal automatically.

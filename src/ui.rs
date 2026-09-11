@@ -1225,7 +1225,7 @@ pub fn render_worker(
             Line::from(""),
             Line::from("Your saved queue is waiting. No X requests can run while disconnected."),
             Line::from(""),
-            Line::from("1. Press i to open Chrome and copy the extension folder."),
+            Line::from("1. Press i to reveal the folder in Finder and open Chrome extensions."),
             Line::from("2. Enable Developer mode. Select Load unpacked."),
             Line::from("3. Press Cmd+Shift+G, paste the folder, and select it."),
             Line::from("4. Open Remover (R icon), then Connect terminal."),

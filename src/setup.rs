@@ -104,6 +104,23 @@ pub fn installed_extension(extension: &Path) -> Installation {
 
 pub async fn open_install(extension: &Path) -> Result<()> {
     copy(extension.display().to_string()).await?;
+    #[cfg(target_os = "macos")]
+    {
+        let folder = extension.to_path_buf();
+        let status = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("/usr/bin/open")
+                .arg("-R")
+                .arg(folder)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+        })
+        .await??;
+        anyhow::ensure!(
+            status.success(),
+            "Could not reveal the extension folder in Finder"
+        );
+    }
     open_chrome("chrome://extensions".into()).await
 }
 
@@ -350,7 +367,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         (
             " Add the Chrome extension ",
             format!(
-                "{}Press Enter to open Chrome and copy the folder path.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n3. Open Remover, then Open X in the same profile.\n\nPairing starts when the extension loads.",
+                "{}Press Enter to reveal the folder in Finder and open Chrome's extension manager. The folder path is also copied.\n\n1. Turn on Developer mode. Select Load unpacked.\n2. Press Cmd+Shift+G, paste, and select the folder.\n3. Open Remover, then Open X in the same profile.\n\nPairing starts when the extension loads.",
                 if setup.installation == Installation::LegacyOnly {
                     "The old extension cannot connect. Install the new R icon.\n\n"
                 } else {
