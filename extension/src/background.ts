@@ -35,7 +35,58 @@ function send(value: unknown, expected = session) {
   if (socket?.readyState === WebSocket.OPEN && expected === session)
     socket.send(JSON.stringify(value));
 }
+let managerSequence = 0;
+let managerAvailable = false;
+const managerRequests = new Map<
+  string,
+  { finish: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }
+>();
+function requestManager(owner_id: string, action: unknown): Promise<unknown> {
+  if (!managerAvailable)
+    return Promise.resolve({
+      ok: false,
+      error: "Update and restart remover to use the visual manager.",
+    });
+  if (!session || socket?.readyState !== WebSocket.OPEN)
+    return Promise.resolve({
+      ok: false,
+      error: "Start remover and connect the terminal first.",
+    });
+  if (managerRequests.size >= 4)
+    return Promise.resolve({
+      ok: false,
+      error: "A request is still running. Try again shortly.",
+    });
+  const request_id = `manager-${++managerSequence}`;
+  return new Promise((finish) => {
+    const timer = setTimeout(() => {
+      managerRequests.delete(request_id);
+      finish({
+        ok: false,
+        error:
+          "The terminal did not respond. Reopen remover and check that both parts are updated. Check the queue before retrying an action.",
+      });
+    }, 6000);
+    managerRequests.set(request_id, { finish, timer });
+    send({
+      type: "manager",
+      session_id: session,
+      request_id,
+      owner_id,
+      action,
+    });
+  });
+}
 async function disconnect() {
+  managerAvailable = false;
+  for (const pending of managerRequests.values()) {
+    clearTimeout(pending.timer);
+    pending.finish({
+      ok: false,
+      error: "Connection changed. Refresh the queue before retrying an action.",
+    });
+  }
+  managerRequests.clear();
   generation++;
   controlEpoch++;
   runner.disconnect();
@@ -166,6 +217,7 @@ async function handle(event: MessageEvent, ws: WebSocket): Promise<void> {
       return;
     }
     session = msg.session_id;
+    managerAvailable = msg.manager_version === 1;
     runner.connect();
     retries = 0;
     await setStatus("Connected");
@@ -184,6 +236,15 @@ async function handle(event: MessageEvent, ws: WebSocket): Promise<void> {
     return;
   }
   if (!session || msg.session_id !== session) return;
+  if (msg.type === "manager_result") {
+    const pending = managerRequests.get(msg.request_id);
+    if (pending) {
+      clearTimeout(pending.timer);
+      managerRequests.delete(msg.request_id);
+      pending.finish({ ok: msg.ok === true, data: msg.data, error: msg.error });
+    }
+    return;
+  }
   if (msg.type === "heartbeat") {
     send({ type: "heartbeat", session_id: session });
     return;
@@ -253,9 +314,24 @@ chrome.action.onClicked.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (
     sender.id !== chrome.runtime.id ||
-    sender.url !== chrome.runtime.getURL("options.html")
+    sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL("options.html")
   )
     return false;
+  if (message.type === "manager") {
+    if (
+      typeof message.owner_id !== "string" ||
+      message.owner_id.length > 30 ||
+      !message.action ||
+      typeof message.action !== "object"
+    ) {
+      respond({ ok: false, error: "Invalid manager request" });
+      return false;
+    }
+    void requestManager(message.owner_id, message.action)
+      .then(respond)
+      .catch((e) => respond({ ok: false, error: safeMessage(e) }));
+    return true;
+  }
   if (message.type === "status") {
     respond({ status, accountHandle });
     return false;

@@ -211,6 +211,7 @@ fn main() {
     let state: x_bot_follower_remover::background::Status = serde_json::from_value(json!({
         "handle":"demo_account", "state":"Cooling down", "remaining":1,"removed":29,"uncertain":1,
         "wait_seconds":42,"message":"Next: checking @quiet_orbit. One account is scheduled for recovery.",
+        "has_job":true,"paused":false,"working":["Checking activity","quiet_orbit"],"phase":"inspect",
         "collected":3048,"checked":81,"kept":52,"retry_later":1,"policy":app.policy,
         "rows":[["quiet_orbit","62d ago","Working"],["copper_echo","Not checked","Waiting"],["old_orbit","703d ago","Retry later"],["studio_friend","Today","Keep: you follow"]]
     })).unwrap();
@@ -219,6 +220,12 @@ fn main() {
     }));
     scenes.push(capture_frame("simple-worker-settings", 120, 34, |f| {
         ui::render_worker(f, &state, Some(&(app.policy.clone(), 0)), false, false)
+    }));
+    let mut animation = x_bot_follower_remover::ritual::Animation::default();
+    animation.removed("departed_example".into());
+    animation.advance(std::time::Duration::from_millis(1100));
+    scenes.push(capture_frame("auto-worker-animation", 140, 42, |f| {
+        ui::render_worker_with_animation(f, &state, None, false, false, Some(&animation))
     }));
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }

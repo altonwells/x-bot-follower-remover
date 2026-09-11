@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Remover",
-  "description": "Connect remover to X. Manage inactive followers from your terminal, with progress saved on your computer.",
-  "version": "0.3.2",
+  "description": "Manage X followers from Chrome or your terminal. Review activity, keep accounts, and control a saved removal queue.",
+  "version": "0.4.0",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -21,7 +21,7 @@
   },
   "options_page": "options.html",
   "action": {
-    "default_title": "Remover \u00b7 Connect Chrome",
+    "default_title": "Remover \u00b7 Follower manager",
     "default_icon": {
       "16": "icons/r-16.png",
       "32": "icons/r-32.png",

@@ -208,3 +208,76 @@ test("X page completion keeps the authenticated bridge and asks for an account r
     ),
   );
 });
+
+test("manager requires controller support and routes replies inside the live session", async () => {
+  const h = await harness();
+  const ws = h.sockets.at(-1);
+  ws.onmessage({
+    data: JSON.stringify({
+      type: "welcome",
+      v: 1,
+      session_id: "manager-session",
+    }),
+  });
+  await flush();
+  assert.equal(
+    (
+      await h.message({
+        type: "manager",
+        owner_id: "1",
+        action: { kind: "snapshot" },
+      })
+    ).ok,
+    false,
+  );
+  ws.onmessage({
+    data: JSON.stringify({
+      type: "welcome",
+      v: 1,
+      manager_version: 1,
+      session_id: "manager-session",
+    }),
+  });
+  await flush();
+  const response = h.message({
+    type: "manager",
+    owner_id: "1",
+    action: { kind: "snapshot" },
+  });
+  await flush();
+  const sent = ws.sent.find((m: any) => m.type === "manager");
+  assert.equal(sent.owner_id, "1");
+  assert.equal(sent.session_id, "manager-session");
+  ws.onmessage({
+    data: JSON.stringify({
+      type: "manager_result",
+      session_id: "manager-session",
+      request_id: sent.request_id,
+      ok: true,
+      data: { rows: [] },
+    }),
+  });
+  assert.equal((await response).ok, true);
+});
+test("disconnect rejects a pending manager action instead of replaying it", async () => {
+  const h = await harness();
+  const ws = h.sockets.at(-1);
+  ws.onmessage({
+    data: JSON.stringify({
+      type: "welcome",
+      v: 1,
+      manager_version: 1,
+      session_id: "manager-session",
+    }),
+  });
+  await flush();
+  const response = h.message({
+    type: "manager",
+    owner_id: "1",
+    action: { kind: "pause" },
+  });
+  await flush();
+  await h.message({ type: "disconnect" });
+  assert.equal((await response).ok, false);
+  assert.equal(ws.sent.filter((m: any) => m.type === "manager").length, 1);
+});

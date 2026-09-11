@@ -186,7 +186,7 @@ export function eligible(a: Account, p: Policy, now = Date.now(), approved = fal
   if (a.last_activity_ms !== null && a.last_activity_ms > cutoff) return false;
   if (p.simple_cleanup) {
     if (a.posts === 0) return typeof a.created_at_ms === "number" && a.created_at_ms > 0 && a.created_at_ms <= cutoff;
-    return a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff;
+    return typeof a.last_activity_ms === "number" && Number.isFinite(a.last_activity_ms) && a.last_activity_ms > 0 && a.last_activity_ms <= cutoff;
   }
   if (p.include_zero_posts && a.posts === 0) return true;
   if (a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff)

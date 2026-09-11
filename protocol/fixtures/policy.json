@@ -29,7 +29,7 @@
   {"name":"recent activity beats zero count","changes":{"posts":0,"last_activity_ms":19999999999},"eligible":false},
   {"name":"simple old covered","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"last_activity_ms":17321600000},"eligible":true},
   {"name":"simple recent","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"last_activity_ms":17494400000},"eligible":false},
-  {"name":"simple old unknown is retry","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"last_activity_ms":11360000000,"coverage_since_ms":null,"posts":1},"eligible":false},
+  {"name":"simple old visible date needs no coverage","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"last_activity_ms":11360000000,"coverage_since_ms":null,"posts":1},"eligible":true},
   {"name":"simple old zero","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"posts":0,"created_at_ms":17321600000,"coverage_since_ms":null},"eligible":true},
   {"name":"simple young zero","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"posts":0,"created_at_ms":19913600000},"eligible":false},
   {"name":"simple zero unknown age","policy":{"simple_cleanup":true,"inactive_days":30},"changes":{"posts":0},"eligible":false},

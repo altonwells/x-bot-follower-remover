@@ -12,3 +12,5 @@ pub mod ui;
 
 pub mod background;
 pub mod pacing;
+
+pub mod manager;

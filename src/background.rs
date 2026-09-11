@@ -23,6 +23,16 @@ pub enum Control {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Status {
+    #[serde(default)]
+    pub recent_removals: Vec<(String, String)>,
+    #[serde(default)]
+    pub paused: bool,
+    #[serde(default)]
+    pub has_job: bool,
+    #[serde(default)]
+    pub working: Option<(String, String)>,
+    #[serde(default)]
+    pub phase: String,
     pub handle: String,
     pub state: String,
     pub remaining: usize,
@@ -61,6 +71,34 @@ impl Status {
             })
             .count();
         Self {
+            recent_removals: app.recent_removals.iter().cloned().collect(),
+            paused: app.paused,
+            has_job: app.auto_policy.is_some() || app.batch.is_some(),
+            phase: app.scan.phase.clone(),
+            working: app
+                .pending
+                .as_ref()
+                .and_then(|w| match &w.command {
+                    crate::protocol::Command::InspectAccount { target_id, .. } => {
+                        Some(("Checking", target_id))
+                    }
+                    crate::protocol::Command::RemoveFollower { target_id, .. } => {
+                        Some(("Removing", target_id))
+                    }
+                    crate::protocol::Command::Reconcile { target_id, .. } => {
+                        Some(("Reconciling", target_id))
+                    }
+                    _ => None,
+                })
+                .map(|(label, id)| {
+                    (
+                        label.into(),
+                        app.accounts
+                            .get(id)
+                            .map(|a| a.handle.clone())
+                            .unwrap_or_else(|| id.clone()),
+                    )
+                }),
             estimate_seconds: if checked >= 20 && app.scan.started_at > 0 && unchecked > 0 {
                 Some(
                     ((now_ms() - app.scan.started_at).max(0) / 1000) * unchecked as i64
@@ -260,7 +298,13 @@ pub async fn run(mut app: App, mut events: mpsc::Receiver<BridgeEvent>, dir: &Pa
                                 || (identity_retry && !matches!(code.as_str(), "access_denied" | "account_changed")));
                     }
                     let identified = matches!(&event, BridgeEvent::Message(crate::protocol::ClientMessage::Result { result: crate::protocol::WorkResult::Session { .. }, .. }));
-                    let result = app.bridge_event(event).await;
+                    let result = if let BridgeEvent::Message(crate::protocol::ClientMessage::Manager {request_id, owner_id, action,..}) = event {
+                        let control = matches!(action, crate::manager::Action::Start{..}|crate::manager::Action::Pause|crate::manager::Action::Resume|crate::manager::Action::Cancel);
+                        let allowed = app.owner == expected_owner;
+                        let result = app.manager_request(request_id, owner_id, action, allowed).await;
+                        if control { automatic = app.managed_run; app.detach_requested = false; }
+                        result
+                    } else { app.bridge_event(event).await };
                     // A reconnect may resume only the owner and queue already approved by the user.
                     if !app.handle.is_empty() && app.owner != expected_owner {
                         automatic = false; app.pause().await?; app.log("X account changed. Stop the worker and confirm the account in the TUI.");

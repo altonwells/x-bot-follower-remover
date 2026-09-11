@@ -120,3 +120,11 @@ It does not include unfollow, hard-block, automatic launch at login, continuous 
 The application uses the MIT license. The signing implementation in `extension/src/transaction.ts` includes a numerical protocol port from twscrape, which credits XClientTransaction. Their copyright and MIT license notices remain in [the extension license file](../extension/THIRD_PARTY_LICENSES.txt) and each extension build.
 
 Release bundles include `DEPENDENCY_LICENSES.md` and a `licenses/` folder with Cargo dependency license files. Development package versions and their license terms are recorded in the lock files. Reference clones are not included in release bundles.
+
+## Visual manager and advanced terminal
+
+`src/manager.rs` projects the controller's saved accounts, action receipts, rules, and queue into browser snapshots. `extension/src/manager.ts` renders the options page and sends owner-bound commands through `background.ts`. No frontend framework or new runtime dependency is used.
+
+`src/ritual.rs` shares the ladle/X scene between foreground and background terminal views. Worker status includes a bounded window of confirmed receipt IDs so polling does not replay old tags. Animation uses elapsed time; the work scheduler still controls requests independently.
+
+Generate terminal fixtures with `cargo run --example preview` and `scripts/render-preview.swift`. For the browser preview, run `python3 scripts/preview-manager.py` after building the extension. It serves fictional profiles on localhost and cannot access X.

@@ -47,6 +47,11 @@ struct Args {
         help = "Show a still cleanup illustration instead of moving water"
     )]
     no_animation: bool,
+    #[arg(
+        long,
+        help = "Open the full inventory, rules, selection, and evidence controls"
+    )]
+    advanced: bool,
     #[command(subcommand)]
     command: Option<CliCommand>,
 }
@@ -138,7 +143,7 @@ async fn main() -> Result<()> {
     }
     if lock.try_lock_exclusive().is_err() {
         if args.command.is_none() && dir.join("worker.sock").exists() {
-            return monitor(&dir).await;
+            return monitor(&dir, args.no_animation, args.advanced).await;
         }
         anyhow::bail!("remover is already running for this data directory");
     }
@@ -199,6 +204,7 @@ async fn main() -> Result<()> {
         )?;
     }
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
+    app.advanced = args.advanced;
     if let Err(error) = x_bot_follower_remover::native::register(&dir, &extension) {
         app.log(format!(
             "Automatic pairing unavailable: {error}. Manual pairing remains available."
@@ -217,7 +223,7 @@ async fn main() -> Result<()> {
             .await
             .is_ok()
             {
-                return monitor(&dir).await;
+                return monitor(&dir, args.no_animation, args.advanced).await;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -234,7 +240,7 @@ async fn main() -> Result<()> {
             setup.refresh_installation();
         }
     }
-    let bridge = tokio::spawn(bridge::serve(listener, config, dir.clone(), events_tx));
+    let mut bridge = tokio::spawn(bridge::serve(listener, config, dir.clone(), events_tx));
     let result = if background {
         x_bot_follower_remover::background::run(app, events_rx, &dir)
             .await
@@ -242,14 +248,20 @@ async fn main() -> Result<()> {
     } else {
         run(app, events_rx, args.no_animation).await
     };
-    bridge.abort();
-    let _ = bridge.await;
+    // Let the closed outgoing channel flush the last manager reply before handoff.
+    if tokio::time::timeout(Duration::from_secs(1), &mut bridge)
+        .await
+        .is_err()
+    {
+        bridge.abort();
+        let _ = bridge.await;
+    }
     drop(lock);
     if result? {
         x_bot_follower_remover::background::spawn(&dir)?;
         for _ in 0..50 {
             if dir.join("worker.sock").exists() {
-                return monitor(&dir).await;
+                return monitor(&dir, args.no_animation, args.advanced).await;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -465,7 +477,7 @@ async fn demo_worker(
     }
 }
 
-async fn monitor(dir: &Path) -> Result<()> {
+async fn monitor(dir: &Path, no_animation: bool, advanced: bool) -> Result<()> {
     use x_bot_follower_remover::background::{Control, request};
     anyhow::ensure!(
         std::io::stdin().is_terminal() && stdout().is_terminal(),
@@ -487,17 +499,58 @@ async fn monitor(dir: &Path) -> Result<()> {
     let mut settings: Option<(Policy, usize)> = None;
     let mut details = false;
     let mut confirm_start = false;
+    let mut show_animation = !advanced;
+    let mut animation = x_bot_follower_remover::ritual::Animation::default();
+    let mut animation_timer =
+        tokio::time::interval(Duration::from_millis(if no_animation { 1000 } else { 50 }));
+    animation_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut clock = std::time::Instant::now();
+    let mut state = request(dir, Control::Status).await?;
+    let mut seen: Vec<String> = state
+        .recent_removals
+        .iter()
+        .map(|(id, _)| id.clone())
+        .collect();
     loop {
-        let state = request(dir, Control::Status).await?;
+        let elapsed = clock.elapsed();
+        clock = std::time::Instant::now();
+        if !no_animation
+            && !state.paused
+            && state.has_job
+            && !matches!(
+                state.state.as_str(),
+                "Waiting for Chrome" | "Checking account"
+            )
+        {
+            animation.advance(elapsed);
+        }
+        for (id, handle) in &state.recent_removals {
+            if !seen.contains(id) {
+                animation.removed(handle.clone());
+            }
+        }
+        seen = state
+            .recent_removals
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
         terminal.draw(|frame| {
-            ui::render_worker(frame, &state, settings.as_ref(), details, confirm_start)
+            ui::render_worker_with_animation(
+                frame,
+                &state,
+                settings.as_ref(),
+                details,
+                confirm_start,
+                show_animation.then_some(&animation),
+            )
         })?;
         tokio::select! {
-            _ = timer.tick() => {},
+            _ = timer.tick() => { state = request(dir, Control::Status).await?; },
+            _ = animation_timer.tick(), if show_animation && !details && !no_animation && state.has_job && !state.paused && !matches!(state.state.as_str(), "Waiting for Chrome"|"Checking account") => {},
             event = keys.next() => if let Some(Ok(Event::Key(key))) = event {
                 if key.kind != KeyEventKind::Press { continue; }
                 if confirm_start {
-                    if key.code == KeyCode::Char('y') { request(dir, Control::Start).await?; confirm_start = false; }
+                    if key.code == KeyCode::Char('y') { state = request(dir, Control::Start).await?; confirm_start = false; }
                     else if matches!(key.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('n')) { confirm_start = false; }
                     continue;
                 }
@@ -509,7 +562,7 @@ async fn monitor(dir: &Path) -> Result<()> {
                         KeyCode::Right => policy.adjust_pacing(*row, 1),
                         KeyCode::Char('R') => policy.copy_pacing(&Policy::default()),
                         KeyCode::Enter | KeyCode::Esc | KeyCode::Char(',') => {
-                            request(dir, Control::Settings { policy: policy.clone() }).await?;
+                            state = request(dir, Control::Settings { policy: policy.clone() }).await?;
                             settings = None;
                         },
                         _ => {},
@@ -521,6 +574,7 @@ async fn monitor(dir: &Path) -> Result<()> {
                     KeyCode::Char('i') => { x_bot_follower_remover::setup::open_install(&x_bot_follower_remover::setup::extension_dir()).await?; None },
                     KeyCode::Char('o') => { x_bot_follower_remover::setup::open_options(&x_bot_follower_remover::setup::extension_dir()).await?; None },
                     KeyCode::Char('b') => { x_bot_follower_remover::setup::open_chrome("https://x.com/".into()).await?; None },
+                    KeyCode::Char('v') | KeyCode::Tab => { show_animation = !show_animation; None },
                     KeyCode::Char(',') => { settings = Some((state.policy.clone(), 0)); None },
                     KeyCode::Enter if state.state == "No queued work" => { confirm_start = true; None },
                     KeyCode::Enter => { details = !details; None },
@@ -530,7 +584,7 @@ async fn monitor(dir: &Path) -> Result<()> {
                     KeyCode::Char('x') => Some(Control::Stop),
                     _ => None,
                 };
-                if let Some(command) = command { let stop = matches!(command, Control::Stop); request(dir, command).await?; if stop { break; } }
+                if let Some(command) = command { let stop = matches!(command, Control::Stop); state = request(dir, command).await?; if stop { break; } }
             } else if event.is_none() { break; },
         }
     }

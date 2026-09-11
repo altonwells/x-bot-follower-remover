@@ -160,6 +160,8 @@ fn approved_simple_snapshot_survives_days_but_recent_or_unknown_never_qualifies(
     assert!(recent.approved_reason(&p, now + 3 * 86_400_000).is_err());
     let mut unknown = a.clone();
     unknown.coverage_since_ms = None;
+    assert!(unknown.approved_reason(&p, now).is_ok());
+    unknown.last_activity_ms = None;
     assert!(unknown.approved_reason(&p, now + 3 * 86_400_000).is_err());
     unknown.posts = Some(1);
     assert!(unknown.approved_reason(&p, now).is_err());
@@ -297,5 +299,27 @@ async fn login_failure_keeps_target_for_resume_without_another_activity_check() 
     app.tick().await.unwrap();
     assert!(
         matches!(&app.pending.as_ref().unwrap().command,Command::RemoveFollower{target_id,..} if target_id=="2")
+    );
+}
+
+#[tokio::test]
+async fn cached_old_post_leaves_retry_later_and_queues_without_another_activity_request() {
+    let (mut app, _rx) = fixture();
+    let mut a = old(app.accounts["2"].clone());
+    a.coverage_since_ms = None;
+    app.accounts.insert("2".into(), a);
+    app.retries.insert(
+        "2".into(),
+        x_bot_follower_remover::app::Retry {
+            attempts: 4,
+            due_ms: now_ms() + 6 * 3_600_000,
+        },
+    );
+    app.tick().await.unwrap();
+    assert!(app.pending.is_none());
+    assert_eq!(app.batch.as_ref().unwrap().ids.front().unwrap(), "2");
+    app.tick().await.unwrap();
+    assert!(
+        matches!(&app.pending.as_ref().unwrap().command, Command::RemoveFollower { target_id, .. } if target_id == "2")
     );
 }

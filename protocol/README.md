@@ -36,3 +36,11 @@ For new jobs, an authenticated ack may include durable:true after the controller
 Retries are persisted per owner and target with attempts and due_ms. Inspection success does not reset a failed-removal retry budget. Confirmed absence or exclusion closes it. A confirmed-present result may schedule a new bounded attempt with a new command ID and the previously approved evidence; the unresolved command is never replayed. After four failures the target is set aside until a later approved pass.
 
 The worker owns the job from approval. The TUI sends fixed commands over a mode-0600 Unix socket. Processing-setting updates copy only pacing fields; they cannot weaken approved eligibility. managed:{owner} preserves explicit pause across process restarts. Normal same-owner Chrome reconnect may resume a running job; account switches and authentication failures stop it. Uncertain results are recovered without requiring a global manual reconciliation step.
+
+## Visual manager
+
+Welcome messages advertise `manager_version: 1`. The options page sends bounded requests through the extension service worker and the existing authenticated WebSocket. Every manager request carries `session_id`, `request_id`, `owner_id`, and a tagged action. Replies use `manager_result` with the matching session and request ID. Older controllers remain usable for pairing; manager controls require the new capability.
+
+Actions are snapshot, collect, inspect, start, pause, resume, cancel, keep, and settings. Start requires explicit confirmation. Mutations require the live owner to match; an initial snapshot may omit owner. Settings can change pacing only. Snapshot search is limited to 200 bytes and pages contain at most 50 profiles. Decisions come from the Rust controller and removal receipts, not a second browser rule engine.
+
+Opening or polling the manager reads local state only. Requests are bounded and are never replayed across reconnects. The terminal flushes its last manager reply before handing an approved run to the background worker.

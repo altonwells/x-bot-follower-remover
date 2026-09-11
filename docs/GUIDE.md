@@ -42,11 +42,11 @@ The new worker resumes after a normal reconnect only for the approved owner. Man
 
 Press Enter on the start screen, then y. Collection, activity checks, queueing, and removal are automatic.
 The fixed rule is no posts in 30 days, not verified, and you do not follow the account.
-Posts, replies, and reposts count. Zero-post accounts must be at least 30 days old.
+The newest visible post date is enough; no separate replies/reposts audit is required. Zero-post accounts must be at least 30 days old.
 Keep exceptions remain protected. Unavailable evidence is retried, never substituted with an old pinned post or a low post count.
 
 The terminal opens the background monitor after approval. q closes only the monitor.
-Space pauses or resumes. Enter shows details. Comma opens processing settings.
+Space pauses or resumes. Enter shows details. Comma opens processing settings. Press v to switch the work list and ladle/X animation. Run `remover --advanced` to open the advanced inventory before a job, or the work list during a job.
 Enable Keep Mac awake there for long runs if needed. Chrome must stay open and signed in.
 
 ## When an account cannot be read

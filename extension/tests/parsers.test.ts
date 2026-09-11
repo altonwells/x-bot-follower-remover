@@ -360,7 +360,7 @@ test("normal conversation modules and empty channels establish inactivity withou
 test("approved simple checks survive days and do not turn recent posts into old approvals", () => {
   const f=JSON.parse(readFileSync("../protocol/fixtures/policy.json","utf8"));
   const p={...f.policy,simple_cleanup:true,inactive_days:30};
-  assert.equal(eligible(f.account,p,f.now_ms+3*86400000,true),true);
+  assert.equal(eligible({...f.account,last_activity_ms:f.now_ms-60*86400000},p,f.now_ms+3*86400000,true),true);
   assert.equal(eligible({...f.account,last_activity_ms:f.now_ms},p,f.now_ms+31*86400000,true),false);
 });
 

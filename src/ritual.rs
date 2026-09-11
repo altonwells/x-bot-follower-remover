@@ -41,7 +41,9 @@ impl Animation {
     }
 }
 pub fn visible(app: &App) -> bool {
-    app.batch.is_some() && !app.show_queue_list && matches!(app.mode, Mode::Browse | Mode::Settings)
+    (app.batch.is_some() || app.auto_policy.is_some())
+        && !app.show_queue_list
+        && matches!(app.mode, Mode::Browse | Mode::Settings)
 }
 pub fn animating(app: &App) -> bool {
     visible(app) && !app.paused && app.sender.is_some()
@@ -87,32 +89,18 @@ fn tag(frame: &mut Frame, area: Rect, row: u16, handle: &str, confirmed: bool) {
     );
 }
 
+pub struct Scene<'a> {
+    pub handle: &'a str,
+    pub removed: usize,
+    pub active: bool,
+    pub state: String,
+    pub target_label: String,
+    pub removing: Option<String>,
+    pub policy: &'a crate::model::Policy,
+    pub remaining: usize,
+    pub animation: &'a Animation,
+}
 pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
-    let active = animating(app);
-    let phase = if active { tick as usize } else { 0 };
-    let now = if active {
-        tick.saturating_mul(50)
-    } else {
-        app.animation.clock_ms
-    };
-    let block = panel(" THE CLEANSE ")
-        .title_top(Line::styled(" , SYSTEM SETTINGS ", fg(ICE)).right_aligned());
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let owner = format!("@{}", clean(&app.handle));
-    let counter = format!("Reseting followers: {}", app.removed);
-    let state = if app.sender.is_none() {
-        "Disconnected · work stopped".into()
-    } else if app.paused {
-        "Paused · water stopped".into()
-    } else if app.pacing.remaining_seconds() > 0 {
-        format!(
-            "Next attempt in {}s · water keeps flowing",
-            app.pacing.remaining_seconds()
-        )
-    } else {
-        "Queue running · removals confirmed by X".into()
-    };
     let target = match app.pending.as_ref().map(|w| &w.command) {
         Some(Command::RemoveFollower { target_id, .. }) => Some(("Removing", target_id)),
         Some(Command::InspectAccount { target_id, .. }) => Some(("Checking", target_id)),
@@ -139,6 +127,58 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
                 "Queue complete".into()
             }
         });
+    let state = if app.sender.is_none() {
+        "Disconnected · work stopped".into()
+    } else if app.paused {
+        "Paused · water stopped".into()
+    } else if app.pacing.remaining_seconds() > 0 {
+        format!(
+            "Next attempt in {}s · water keeps flowing",
+            app.pacing.remaining_seconds()
+        )
+    } else {
+        "Queue running · removals confirmed by X".into()
+    };
+    let scene = Scene {
+        handle: &app.handle,
+        removed: app.removed,
+        active: animating(app),
+        state,
+        target_label,
+        removing: if target.is_some_and(|(label, _)| label == "Removing") {
+            handle
+        } else {
+            None
+        },
+        policy: app
+            .batch
+            .as_ref()
+            .map(|b| &b.policy)
+            .or(app.auto_policy.as_ref())
+            .unwrap_or(&app.policy),
+        remaining: app.batch.as_ref().map_or(0, |b| b.ids.len()),
+        animation: &app.animation,
+    };
+    render_scene(frame, &scene, area, tick);
+}
+pub fn render_scene(frame: &mut Frame, scene: &Scene<'_>, area: Rect, tick: u64) {
+    let active = scene.active;
+    let phase = if active { tick as usize } else { 0 };
+    let now = if active {
+        tick.saturating_mul(50)
+    } else {
+        scene.animation.clock_ms
+    };
+    let block = panel(" THE CLEANSE ")
+        .title_top(Line::styled(" , SYSTEM SETTINGS ", fg(ICE)).right_aligned());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let owner = format!("@{}", clean(scene.handle));
+    let counter = format!("Reseting followers: {}", scene.removed);
+    let state = scene.state.clone();
+    let target_label = scene.target_label.clone();
+    let policy = scene.policy;
+    let remaining = scene.remaining;
     if inner.height < 20 || inner.width < 85 {
         frame.render_widget(
             Paragraph::new(vec![
@@ -156,7 +196,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
                 ),
                 Line::styled(state, fg(if active { MINT } else { AMBER })),
                 Line::styled(
-                    app.animation
+                    scene
+                        .animation
                         .departures
                         .back()
                         .map(|d| format!("✓ Removed @{}", d.handle))
@@ -265,7 +306,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
             }),
         );
     }
-    for departure in &app.animation.departures {
+    for departure in &scene.animation.departures {
         let age = now.saturating_sub(departure.at_ms);
         if age < 8000 {
             tag(
@@ -277,16 +318,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
             );
         }
     }
-    if target.is_some_and(|(label, _)| label == "Removing") {
-        tag(frame, art, 6, handle.as_deref().unwrap_or("unknown"), false);
+    if let Some(handle) = &scene.removing {
+        tag(frame, art, 6, handle, false);
     }
-    let policy = app
-        .batch
-        .as_ref()
-        .map(|b| &b.policy)
-        .or(app.auto_policy.as_ref())
-        .unwrap_or(&app.policy);
-    let remaining = app.batch.as_ref().map_or(0, |b| b.ids.len());
     let mut lines = vec![
         Line::from(""),
         Line::styled("FOLLOWER CLEANUP", fg(MUTED)),
@@ -318,7 +352,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, tick: u64) {
             fg(MUTED),
         ),
     ];
-    if let Some(last) = app.animation.departures.back() {
+    if let Some(last) = scene.animation.departures.back() {
         lines.extend([
             Line::from(""),
             Line::styled(format!("✓ Removed @{}", last.handle), bold(MINT)),

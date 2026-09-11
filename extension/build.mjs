@@ -16,7 +16,7 @@ if (process.argv.includes("--test")) {
 } else {
   await mkdir("dist", { recursive: true });
   await build({
-    entryPoints: ["src/background.ts", "src/options.ts"],
+    entryPoints: ["src/background.ts", "src/options.ts", "src/manager.ts"],
     outdir: "dist",
     bundle: true,
     format: "esm",

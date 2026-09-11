@@ -4,31 +4,202 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light" />
-    <title>Remover · Connect Chrome</title>
+    <title>Remover · Follower manager</title>
     <link rel="icon" href="icons/r-32.png" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
-    <main>
-      <header class="masthead">
+    <div class="shell">
+      <aside class="sidebar">
         <a class="brand" href="#" aria-label="Remover home"
           ><img
             src="icons/r-48.png"
+            alt=""
             width="36"
             height="36"
-            alt=""
-          />remover<span class="brand-dot">.</span></a
+          />remover<span>.</span></a
         >
-        <span class="local-label"
-          ><span class="dot"></span> YOUR COMPUTER. YOUR CONTROL.</span
+        <div class="workspace">
+          <span class="workspace-icon">X</span>
+          <div>
+            <strong id="workspace-handle">Your X account</strong
+            ><small>Personal workspace</small>
+          </div>
+        </div>
+        <p class="nav-label">YOUR FOLLOWERS</p>
+        <nav id="views" aria-label="Follower views">
+          <button data-view="all" class="nav-item active">
+            <span>◫ &nbsp; All followers</span><b data-count="all">—</b>
+          </button>
+          <button data-view="keep" class="nav-item">
+            <span>✓ &nbsp; Keeping</span><b data-count="keep">—</b>
+          </button>
+          <button data-view="remove" class="nav-item">
+            <span>↗ &nbsp; Planned removal</span><b data-count="remove">—</b>
+          </button>
+          <button data-view="review" class="nav-item">
+            <span>◷ &nbsp; Needs a check</span><b data-count="review">—</b>
+          </button>
+          <button data-view="queue" class="nav-item">
+            <span>≋ &nbsp; Removal queue</span><b data-count="queue">—</b>
+          </button>
+          <button data-view="removed" class="nav-item">
+            <span>↙ &nbsp; Removed</span><b data-count="removed">—</b>
+          </button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="local-note">
+            <span class="dot"></span> Runs on your computer
+          </div>
+          <button id="settings-open" class="nav-item">
+            ⚙ &nbsp; Processing settings</button
+          ><button id="connection-open" class="nav-item">
+            ⌘ &nbsp; Connection & setup</button
+          ><small id="version"></small>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <span
+            >FOLLOWER MANAGER <span class="separator">/</span>
+            <span id="account-top">Connect your account</span></span
+          ><span class="live-status" id="live-status">Connecting…</span>
+        </header>
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">A LITTLE LESS NOISE</p>
+            <h1>Your followers.<br /><span>Your call.</span></h1>
+            <p>See who stays, who goes, and why.</p>
+          </div>
+          <div class="primary-actions">
+            <button id="collect" class="secondary" disabled>
+              ↻ Load followers</button
+            ><button id="start" disabled>Start cleanup <span>↗</span></button>
+          </div>
+        </section>
+        <div
+          id="manager-error"
+          class="error-banner"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+        <section class="metrics" aria-label="Follower summary">
+          <button data-view="all" class="metric">
+            <span>Followers loaded</span><strong data-count="all">—</strong
+            ><small>Your saved inventory</small>
+          </button>
+          <button data-view="keep" class="metric">
+            <span>Keeping</span><strong data-count="keep">—</strong
+            ><small>Protected by your rules</small>
+          </button>
+          <button data-view="remove" class="metric">
+            <span>Planned removal</span><strong data-count="remove">—</strong
+            ><small>Pass the activity check</small>
+          </button>
+          <button data-view="removed" class="metric">
+            <span>Removed</span><strong id="removed-total">—</strong
+            ><small>Confirmed removals, all time</small>
+          </button>
+        </section>
+        <section class="run-card" aria-label="Current work">
+          <div class="run-icon" id="run-icon">↻</div>
+          <div class="run-description">
+            <div class="run-title">
+              <strong id="run-title">Connect to get started</strong
+              ><span class="badge" id="run-badge">Offline</span>
+            </div>
+            <p id="run-detail">
+              Start remover in your terminal. Your saved followers will appear
+              here.
+            </p>
+            <div class="progress-track"><div id="progress-fill"></div></div>
+            <small id="run-progress">No work starts until you choose it.</small>
+          </div>
+          <div class="run-actions">
+            <button id="inspect" class="secondary" disabled>
+              Check activity</button
+            ><button id="pause" class="secondary" disabled>Pause</button
+            ><button id="cancel" class="quiet" disabled>Cancel job</button>
+          </div>
+        </section>
+        <section class="inventory" aria-label="Follower inventory">
+          <div class="inventory-heading">
+            <div>
+              <h2 id="view-heading">All followers</h2>
+              <p id="view-description">
+                Every decision, with the evidence behind it.
+              </p>
+            </div>
+            <label class="search"
+              ><span aria-hidden="true">⌕</span
+              ><input
+                id="search"
+                type="search"
+                maxlength="200"
+                placeholder="Search name or @handle"
+                aria-label="Search followers"
+              /><kbd>/</kbd></label
+            >
+          </div>
+          <div class="filter-strip">
+            <span id="activity-rule" class="rule-tag"
+              >Last post over 30 days ago</span
+            ><span id="verified-rule">✓ Keep verified</span
+            ><span id="following-rule">✓ Keep people you follow</span
+            ><span id="sync-label">Waiting for terminal</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Last activity</th>
+                  <th>Posts</th>
+                  <th>Decision</th>
+                  <th class="reason-column">Why</th>
+                  <th><span class="sr-only">Details</span></th>
+                </tr>
+              </thead>
+              <tbody id="follower-rows"></tbody>
+            </table>
+          </div>
+          <div id="empty" class="empty">
+            <div>◫</div>
+            <h3>Your list starts here</h3>
+            <p>
+              Connect your terminal, then load your followers. Loading does not
+              remove anyone.
+            </p>
+          </div>
+          <div class="pagination">
+            <span id="page-label">0 followers</span>
+            <div>
+              <button id="previous" class="quiet" disabled>← Previous</button
+              ><button id="next" class="quiet" disabled>Next →</button>
+            </div>
+          </div>
+        </section>
+        <footer>
+          <span>Login stays in Chrome. Progress stays on your computer.</span
+          ><span id="footer-note"
+            >Keep Chrome signed in and your Mac awake.</span
+          >
+        </footer>
+      </main>
+    </div>
+    <dialog id="connection-dialog" class="connection-dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">CONNECTION</p>
+          <h2>Let’s get you connected.</h2>
+        </div>
+        <button
+          class="quiet close-dialog"
+          aria-label="Close connection settings"
         >
-      </header>
-      <div class="intro">
-        <p class="eyebrow">A FRESH START</p>
-        <h1>Less noise.<br /><span>More you.</span></h1>
-        <p class="lede">
-          Connect your terminal to X.<br />A cleaner follower list starts here.
-        </p>
+          ✕
+        </button>
       </div>
       <div class="connection-card">
         <div class="card-heading">
@@ -154,10 +325,104 @@
           </button>
         </div>
       </details>
-      <footer>
-        <span>Less clutter. On your terms.</span><span id="version"></span>
-      </footer>
-    </main>
+    </dialog>
+    <dialog id="detail-dialog" class="detail-dialog">
+      <div class="dialog-heading">
+        <span class="eyebrow">ACCOUNT DETAILS</span
+        ><button class="quiet close-dialog" aria-label="Close account details">
+          ✕
+        </button>
+      </div>
+      <div id="detail-content"></div>
+      <div class="detail-actions">
+        <button id="keep-account">Keep this account</button
+        ><a
+          id="profile-link"
+          class="button secondary"
+          target="_blank"
+          rel="noopener noreferrer"
+          >View on X ↗</a
+        >
+      </div>
+      <p class="fine-print">
+        Keep excludes this account from pending removals. It cannot undo a
+        removal already sent to X.
+      </p>
+    </dialog>
+    <dialog id="confirm-dialog">
+      <div class="dialog-heading">
+        <h2 id="confirm-title">Start cleanup?</h2>
+        <button class="quiet close-dialog" aria-label="Close confirmation">
+          ✕
+        </button>
+      </div>
+      <div id="confirm-copy"></div>
+      <div class="buttons">
+        <button id="confirm-dismiss" class="secondary">Go back</button
+        ><button id="confirm-action">Approve cleanup</button>
+      </div>
+    </dialog>
+    <dialog id="settings-dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">YOUR PACE</p>
+          <h2>Processing settings</h2>
+        </div>
+        <button
+          class="quiet close-dialog"
+          aria-label="Close processing settings"
+        >
+          ✕
+        </button>
+      </div>
+      <p>Changes apply to following work. Existing cooldowns finish first.</p>
+      <form id="processing-form">
+        <div class="setting-grid">
+          <label
+            >Seconds between removals<input
+              name="delay_seconds"
+              type="number"
+              min="5"
+              max="300"
+              required /></label
+          ><label
+            >Attempts per batch<input
+              name="rest_every"
+              type="number"
+              min="1"
+              max="100"
+              required /></label
+          ><label
+            >Rest between batches (seconds)<input
+              name="rest_seconds"
+              type="number"
+              min="0"
+              max="3600"
+              required /></label
+          ><label
+            >Hourly attempt limit<input
+              name="batch_limit"
+              type="number"
+              min="1"
+              max="500"
+              required
+          /></label>
+        </div>
+        <label class="checkbox"
+          ><input name="keep_awake" type="checkbox" />Keep this Mac awake while
+          the job runs</label
+        >
+        <p class="fine-print">
+          X can require longer waits. These controls do not override X’s limits.
+        </p>
+        <div class="buttons">
+          <button type="button" id="recommended" class="secondary">
+            Use recommended</button
+          ><button type="submit">Save settings</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="options.js"></script>
+    <script type="module" src="manager.js"></script>
   </body>
 </html>

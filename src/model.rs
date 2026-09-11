@@ -169,8 +169,8 @@ impl Account {
                     Err("Account age not established / under 30 days")
                 };
             }
-            return if self.coverage_since_ms.is_some_and(|t| t <= cutoff) {
-                Ok("No posts in 30 days")
+            return if self.last_activity_ms.is_some_and(|t| t > 0 && t <= cutoff) {
+                Ok("Latest visible post is over 30 days old")
             } else {
                 Err("Activity unavailable; retry later")
             };

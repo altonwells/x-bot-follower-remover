@@ -46,6 +46,9 @@ pub async fn serve(
     events: mpsc::Sender<BridgeEvent>,
 ) -> Result<()> {
     loop {
+        if events.is_closed() {
+            return Ok(());
+        }
         let (socket, _) = listener.accept().await?;
         if let Err(error) = connection(socket, &mut config, &dir, &events).await
             && events
@@ -121,7 +124,7 @@ async fn connection(
     }
     let session_id = new_id();
     ws.send(Message::Text(
-        json!({"v":VERSION,"type":"welcome","session_id":session_id})
+        json!({"v":VERSION,"type":"welcome","manager_version":1,"session_id":session_id})
             .to_string()
             .into(),
     ))
@@ -157,7 +160,7 @@ async fn connection(
                     Message::Text(text)=>{
                         let msg:ClientMessage=serde_json::from_str(&text)?;
                         let received_session=match &msg {
-                            ClientMessage::Heartbeat{session_id}|ClientMessage::XPageReady{session_id}|ClientMessage::Result{session_id,..}|ClientMessage::Recovery{session_id,..}=>session_id,
+                            ClientMessage::Manager{session_id,..}|ClientMessage::Heartbeat{session_id}|ClientMessage::XPageReady{session_id}|ClientMessage::Result{session_id,..}|ClientMessage::Recovery{session_id,..}=>session_id,
                             ClientMessage::Hello{..}=>bail!("Unexpected pairing message"),
                         };
                         if received_session!=&session_id { bail!("Stale session rejected"); }

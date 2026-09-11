@@ -74,6 +74,12 @@ pub enum WorkResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
+    Manager {
+        session_id: String,
+        request_id: String,
+        owner_id: String,
+        action: crate::manager::Action,
+    },
     Hello {
         v: u8,
         token: String,

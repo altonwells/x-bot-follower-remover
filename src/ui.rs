@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 pub const HELP: &[(&str, &str)] = &[
+    ("Tab", "Switch simple / advanced inventory view"),
     ("↑ ↓ / j k / PgUp PgDn", "Navigate"),
     ("s", "1. Collect followers (no activity check)"),
     ("i", "2. Check activity from the top of the list"),
@@ -60,7 +61,11 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
         crate::setup::render(frame, app);
         return;
     }
-    if app.policy.simple_cleanup && app.auto_policy.is_none() && app.batch.is_none() {
+    if !app.advanced
+        && app.policy.simple_cleanup
+        && app.auto_policy.is_none()
+        && app.batch.is_none()
+    {
         let [header, body, footer] = Layout::vertical([
             Constraint::Length(3),
             Constraint::Min(5),
@@ -74,7 +79,7 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
                 Line::from(""),
                 Line::from("No posts in 30 days."),
                 Line::from("Always keep verified accounts and people you follow."),
-                Line::from("Posts, replies and reposts count as activity."),
+                Line::from("Uses the latest visible post; no full-history check."),
                 Line::from(""),
                 Line::from("Checks, queueing and retries run automatically in the background."),
                 Line::from("Close the terminal; reopen remover to see progress."),
@@ -89,7 +94,7 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
                 if !app.demo && (app.sender.is_none() || app.handle.is_empty()) {
                     "Connect Chrome first    Shift+P Setup    q Quit"
                 } else {
-                    "Enter Start cleanup    , Settings    q Quit"
+                    "Enter Start cleanup    Tab Advanced    , Settings    q Quit"
                 },
             )
             .style(bold(MINT)),
@@ -800,7 +805,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                     ),
                     Line::from("No posts in 30 days."),
                     Line::from("Keep verified accounts and people you follow."),
-                    Line::from("Posts, replies and reposts count."),
+                    Line::from("Uses the latest visible post."),
                     Line::from("Checks and removal run in the background."),
                     Line::styled("There is no restore-followers action.", bold(RED)),
                 ],
@@ -1168,6 +1173,16 @@ pub fn render_worker(
     details: bool,
     confirm_start: bool,
 ) {
+    render_worker_with_animation(frame, state, settings, details, confirm_start, None);
+}
+pub fn render_worker_with_animation(
+    frame: &mut Frame,
+    state: &crate::background::Status,
+    settings: Option<&(crate::model::Policy, usize)>,
+    details: bool,
+    confirm_start: bool,
+    animation: Option<&crate::ritual::Animation>,
+) {
     let area = frame.area();
     frame.render_widget(Block::default().style(fg(TEXT).bg(BG)), area);
     let [header, summary, body, footer] = Layout::vertical([
@@ -1289,6 +1304,47 @@ pub fn render_worker(
         );
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
+    if let Some(animation) = animation
+        && state.has_job
+        && !details
+        && !matches!(
+            state.state.as_str(),
+            "Waiting for Chrome" | "Checking account"
+        )
+    {
+        let active = !state.paused;
+        let scene = crate::ritual::Scene {
+            handle: &state.handle,
+            removed: state.removed,
+            active,
+            state: if state.paused {
+                "Paused · water stopped".into()
+            } else if state.wait_seconds > 0 {
+                format!(
+                    "Next attempt in {}s · water keeps flowing",
+                    state.wait_seconds
+                )
+            } else {
+                "Queue running · results confirmed by X".into()
+            },
+            target_label: state
+                .working
+                .as_ref()
+                .map(|(action, handle)| format!("{action}: @{handle}"))
+                .unwrap_or_else(|| format!("Full Auto: {}", state.phase)),
+            removing: state
+                .working
+                .as_ref()
+                .filter(|(action, _)| action == "Removing")
+                .map(|(_, handle)| handle.clone()),
+            policy: &state.policy,
+            remaining: state.remaining,
+            animation,
+        };
+        frame.render_widget(Clear, body);
+        crate::ritual::render_scene(frame, &scene, body, animation.clock_ms / 50);
+    }
+
     frame.render_widget(
         Paragraph::new(
             if state.state == "Waiting for Chrome" || state.state == "Checking account" {
@@ -1296,7 +1352,7 @@ pub fn render_worker(
             } else if state.state == "No queued work" {
                 "Enter Start cleanup    , Settings    q Close view"
             } else {
-                "Space Pause/Resume    , Settings    Enter Details    q Close view"
+                "Space Pause/Resume    v List/Animation    , Settings    q Close view"
             },
         )
         .style(bold(MINT))

@@ -472,3 +472,37 @@ test("empty first activity page follows its cursor and modules yield the latest 
   assert.equal(calls.length,2);
   assert.equal(JSON.parse(calls[1].url.searchParams.get("variables")!).cursor,"second");
 });
+
+test("simple cleanup uses the latest visible post without walking other channels or older pages", async (t) => {
+  const f = await fixture(t, (u) => {
+    const op = u.pathname.split("/").pop();
+    if (op === "UserByRestId") return Response.json({data: {user: {result: modern()}}});
+    assert.equal(op, "UserOriginalsTimeline");
+    const result = timeline("2020-01-01");
+    result.instructions[0].entries.push({content: {cursorType: "Bottom", value: "older-page"}} as any);
+    result.instructions[0].entries.push({content: {itemContent: {}}} as any);
+    return Response.json(result);
+  });
+  const a = await f.client.inspect("1", "2", {...policy, simple_cleanup: true});
+  assert.equal(a.last_activity_ms, Date.parse("2020-01-01"));
+  assert.equal(a.coverage_since_ms, null);
+  const {eligible} = await import("../src/protocol");
+  assert.equal(eligible(a, {...policy, simple_cleanup: true}), true);
+  assert.equal(f.calls.filter(c => c.url.pathname.endsWith("UserOriginalsTimeline")).length, 1);
+  assert(!f.calls.some(c => /User(Replies|Reposts)Timeline|UserTweetsAndReplies/.test(c.url.pathname)));
+});
+
+test("simple cleanup keeps a recent post and never infers a date from an empty timeline", async (t) => {
+  let recent = true;
+  const f = await fixture(t, (u) => {
+    if (u.pathname.endsWith("UserByRestId")) return Response.json({data: {user: {result: modern()}}});
+    return Response.json(recent ? timeline(new Date().toISOString()) : empty());
+  });
+  const {eligible} = await import("../src/protocol");
+  const p = {...policy, simple_cleanup: true};
+  assert.equal(eligible(await f.client.inspect("1", "2", p), p), false);
+  recent = false;
+  const missing = await f.client.inspect("1", "2", p);
+  assert.equal(missing.last_activity_ms, null);
+  assert.equal(eligible(missing, p), false);
+});

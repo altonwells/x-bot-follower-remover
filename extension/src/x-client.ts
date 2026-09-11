@@ -562,6 +562,37 @@ export class XClient {
       return account;
     }
     const cutoff = account.checked_at_ms - policy.inactive_days * 86_400_000;
+    if (policy.simple_cleanup) {
+      // The simple pass uses the newest visible post, not exhaustive channel coverage.
+      // Start at the top; old pins and foreign conversation posts are excluded by the parser.
+      const operations = ["UserOriginalsTimeline", "UserTweetsAndReplies"] as const;
+      if (!operations.some((op) => this.templates[op])) await this.discover();
+      let available = false;
+      for (const op of operations) {
+        if (!this.templates[op]) continue;
+        available = true;
+        this.assertRead(epoch);
+        let raw;
+        try {
+          raw = await this.graphql(op, { userId: id, cursor: undefined, count: 40,
+            includePromotedContent: false, withCommunity: true, withVoice: true });
+        } catch (error) {
+          if (error instanceof XError && ["http_404", "operation_unavailable"].includes(error.code)) continue;
+          throw error;
+        }
+        this.assertRead(epoch);
+        const evidence = postingEvidence(raw, id, cutoff);
+        account.last_activity_ms = evidence.latest;
+        if (evidence.latest !== null) break;
+      }
+      if (!available) throw new XError("operation_unavailable", "Open a profile's Posts tab on X, refresh discovery, then retry.");
+      account.activity_note = account.last_activity_ms !== null
+        ? "Latest visible post from the top of the timeline. Full activity history was not requested."
+        : "X did not return a readable post date; retry later.";
+      await this.assertOwner(owner);
+      this.assertRead(epoch);
+      return account;
+    }
     const modern = [
       "UserOriginalsTimeline",
       "UserRepliesTimeline",

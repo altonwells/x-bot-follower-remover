@@ -51,6 +51,7 @@ pub enum Mode {
     Confirm,
 }
 pub struct App {
+    pub advanced: bool,
     pub setup: Option<Setup>,
     pub store: Storage,
     pub owner: String,
@@ -83,6 +84,7 @@ pub struct App {
     pub pacing: crate::pacing::Pacing,
     pub detach_requested: bool,
     pub animation: crate::ritual::Animation,
+    pub recent_removals: VecDeque<(String, String)>,
     pub auto_policy: Option<Policy>,
     pub retries: BTreeMap<String, Retry>,
     pub managed_run: bool,
@@ -129,6 +131,7 @@ impl App {
         let managed_run = store.get(&format!("managed:{owner}"))?.unwrap_or(false);
         Ok(Self {
             setup: None,
+            advanced: false,
             store: Storage::new(store),
             owner,
             handle: String::new(),
@@ -160,6 +163,7 @@ impl App {
             pacing,
             detach_requested: false,
             animation: crate::ritual::Animation::default(),
+            recent_removals: VecDeque::new(),
             auto_policy,
             retries,
             managed_run,
@@ -286,7 +290,7 @@ impl App {
         self.log("Cleanup approved. Starting the background worker; activity checks and queueing are automatic.");
         Ok(())
     }
-    async fn save_batch(&self) -> Result<()> {
+    pub(crate) async fn save_batch(&self) -> Result<()> {
         let key = format!("batch:{}", self.owner);
         let b = self.batch.clone();
         let auto_key = format!("auto:{}", self.owner);
@@ -301,12 +305,12 @@ impl App {
             })
             .await
     }
-    async fn save_scan(&self) -> Result<()> {
+    pub(crate) async fn save_scan(&self) -> Result<()> {
         let key = format!("scan:{}", self.owner);
         let scan = self.scan.clone();
         self.store.run(move |s| s.set(&key, &scan)).await
     }
-    async fn send_control(&self, kind: &str) -> Result<()> {
+    pub(crate) async fn send_control(&self, kind: &str) -> Result<()> {
         if let Some(tx) = &self.sender {
             tx.send(json!({"type":kind,"session_id":self.session}))
                 .await?;
@@ -361,7 +365,7 @@ impl App {
         self.save_batch().await?;
         self.save_scan().await
     }
-    async fn start_scan(&mut self) -> Result<()> {
+    pub(crate) async fn start_scan(&mut self) -> Result<()> {
         if !self.demo && !self.capabilities.iter().any(|c| c == "adapter:2") {
             bail!("Reload remover in chrome://extensions, then Connect terminal before scanning");
         }
@@ -400,6 +404,25 @@ impl App {
         self.log("Collecting following, then followers. Activity is a separate step (i). Progress is saved after each page.");
         Ok(())
     }
+    pub(crate) async fn start_activity(&mut self) -> Result<()> {
+        if self.batch.is_some()
+            || self.auto_policy.is_some()
+            || self.pending.is_some()
+            || !matches!(self.scan.phase.as_str(), "review" | "inspect" | "done")
+        {
+            bail!("Finish collecting followers first (s), then press i to check activity");
+        }
+        self.query.clear();
+        self.only_matching = false;
+        self.focus = 0;
+        self.scan.phase = "inspect".into();
+        self.scan.started_at = now_ms();
+        self.save_scan().await?;
+        self.send_control("resume").await?;
+        self.paused = false;
+        self.log("Checking collected followers from the top in displayed order. Protected accounts are skipped; the highlight follows the current check.");
+        Ok(())
+    }
     pub async fn key(&mut self, key: KeyEvent) -> Result<()> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.pause().await?;
@@ -409,7 +432,16 @@ impl App {
         if self.mode == Mode::Setup {
             return self.setup_key(key).await;
         }
-        if self.mode == Mode::Browse && self.policy.simple_cleanup {
+        if self.mode == Mode::Browse && key.code == KeyCode::Tab {
+            self.advanced = !self.advanced;
+            self.log(if self.advanced {
+                "Advanced view. s collect · i activity · f rules · d review · Tab simple view"
+            } else {
+                "Simple view. Enter starts cleanup · Tab advanced view"
+            });
+            return Ok(());
+        }
+        if self.mode == Mode::Browse && self.policy.simple_cleanup && !self.advanced {
             if !self.demo && (self.sender.is_none() || self.handle.is_empty()) {
                 if self.setup.is_some() {
                     self.mode = Mode::Setup;
@@ -658,6 +690,9 @@ impl App {
                     bail!("Pause and cancel existing work before starting Full Auto");
                 }
                 self.paused = true;
+                let mut policy = Policy::cleanup();
+                policy.copy_pacing(&self.policy);
+                self.policy = policy;
                 self.mode = Mode::AutoConfirm;
             }
             KeyCode::Char('f') => {
@@ -682,22 +717,7 @@ impl App {
                 self.start_scan().await?;
             }
             KeyCode::Char('i') => {
-                if self.batch.is_some()
-                    || self.auto_policy.is_some()
-                    || self.pending.is_some()
-                    || !matches!(self.scan.phase.as_str(), "review" | "inspect" | "done")
-                {
-                    bail!("Finish collecting followers first (s), then press i to check activity");
-                }
-                self.query.clear();
-                self.only_matching = false;
-                self.focus = 0;
-                self.scan.phase = "inspect".into();
-                self.scan.started_at = now_ms();
-                self.save_scan().await?;
-                self.send_control("resume").await?;
-                self.paused = false;
-                self.log("Checking collected followers from the top in displayed order. Protected accounts are skipped; the highlight follows the current check.");
+                self.start_activity().await?;
             }
             KeyCode::Char('b') => {
                 if self.demo {
@@ -922,6 +942,7 @@ impl App {
         Ok(())
     }
     fn adjust(&mut self, d: i32) {
+        self.policy.simple_cleanup = false;
         match self.filter_row {
             0 => {
                 self.policy.inactive_days =
@@ -1046,16 +1067,24 @@ impl App {
             }
             "inspect" => {
                 let owner = self.owner.clone();
-                let unresolved: BTreeSet<String> = self
+                let (unresolved, attempted): (BTreeSet<String>, BTreeSet<String>) = self
                     .store
                     .run(move |s| {
-                        Ok(s.unresolved(&owner)?
+                        let unresolved = s
+                            .unresolved(&owner)?
                             .into_iter()
                             .filter_map(|w| match w.command {
                                 Command::RemoveFollower { target_id, .. } => Some(target_id),
                                 _ => None,
                             })
-                            .collect())
+                            .collect();
+                        let mut q = s
+                            .conn
+                            .prepare("SELECT DISTINCT target FROM actions WHERE owner=?")?;
+                        let attempted = q
+                            .query_map([owner], |r| r.get(0))?
+                            .collect::<rusqlite::Result<BTreeSet<String>>>()?;
+                        Ok((unresolved, attempted))
                     })
                     .await?;
                 let id = self
@@ -1066,10 +1095,12 @@ impl App {
                             && !unresolved.contains(&a.id)
                             && (a.checked_at_ms.unwrap_or(0) < self.scan.started_at
                                 || self.retries.contains_key(&a.id))
-                            && self
-                                .retries
-                                .get(&a.id)
-                                .is_none_or(|r| r.attempts < 4 && r.due_ms <= now_ms())
+                            && self.retries.get(&a.id).is_none_or(|r| {
+                                (self.simple_running()
+                                    && !attempted.contains(&a.id)
+                                    && a.approved_reason(&self.policy, now_ms()).is_ok())
+                                    || (r.attempts < 4 && r.due_ms <= now_ms())
+                            })
                     })
                     .map(|a| a.id.clone());
                 if let Some(target_id) = id {
@@ -1151,6 +1182,15 @@ impl App {
                 self.pending = None;
                 self.refresh_counts().await?;
                 self.log(message);
+            }
+            BridgeEvent::Message(ClientMessage::Manager {
+                request_id,
+                owner_id,
+                action,
+                ..
+            }) => {
+                self.manager_request(request_id, owner_id, action, true)
+                    .await?;
             }
             BridgeEvent::Message(ClientMessage::XPageReady { .. }) => {
                 if self.mode == Mode::Setup
@@ -1272,6 +1312,11 @@ impl App {
                 if let Some(a) = self.accounts.get_mut(&target) {
                     if status == "verified_removed" && a.follows_me != Some(false) {
                         self.animation.removed(a.handle.clone());
+                        if self.recent_removals.len() == 8 {
+                            self.recent_removals.pop_front();
+                        }
+                        self.recent_removals
+                            .push_back((w.command_id.clone(), a.handle.clone()));
                     }
                     a.follows_me = Some(false);
                     let (owner, record) = (self.owner.clone(), a.clone());

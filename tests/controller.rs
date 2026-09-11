@@ -585,7 +585,10 @@ async fn full_auto_collects_checks_removes_only_cleared_accounts_and_finishes() 
         app.pacing.until_ms = 0;
     }
     let mut app = fixture();
+    app.advanced = true;
+    app.capabilities.push("simple_cleanup:1".into());
     let mut inactive = app.accounts["2"].clone();
+    inactive.created_at_ms = Some(now_ms() - 365 * 86_400_000);
     inactive.handle = "alpha".into();
     inactive.checked_at_ms = None;
     let mut active = inactive.clone();
