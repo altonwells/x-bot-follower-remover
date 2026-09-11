@@ -1,4 +1,6 @@
 export interface Policy {
+  simple_cleanup?: boolean;
+  keep_awake?: boolean;
   inactive_days: number;
   skip_verified: boolean;
   skip_following: boolean;
@@ -15,6 +17,7 @@ export interface Account {
   followers: number | null;
   following_count: number | null;
   posts: number | null;
+  created_at_ms?: number | null;
   verified: boolean | null;
   protected: boolean | null;
   follows_me: boolean | null;
@@ -128,6 +131,8 @@ export function parseWork(value: unknown): Work {
     const p = c.policy;
     if (
       !p ||
+      (p.simple_cleanup !== undefined && typeof p.simple_cleanup !== "boolean") ||
+      (p.simple_cleanup === true && (p.inactive_days !== 30 || !p.skip_verified || !p.skip_following)) ||
       !Number.isInteger(p.inactive_days) ||
       p.inactive_days < 1 ||
       p.inactive_days > 3650 ||
@@ -160,7 +165,8 @@ export function parseWork(value: unknown): Work {
     throw new Error("Invalid reconciliation command");
   return w;
 }
-export function eligible(a: Account, p: Policy, now = Date.now()): boolean {
+export function eligible(a: Account, p: Policy, now = Date.now(), approved = false): boolean {
+  if (approved && p.simple_cleanup && typeof a.checked_at_ms === "number" && a.checked_at_ms <= now) now = a.checked_at_ms;
   if (
     a.kept ||
     a.follows_me !== true ||
@@ -178,6 +184,10 @@ export function eligible(a: Account, p: Policy, now = Date.now()): boolean {
     return false;
   const cutoff = now - p.inactive_days * 86_400_000;
   if (a.last_activity_ms !== null && a.last_activity_ms > cutoff) return false;
+  if (p.simple_cleanup) {
+    if (a.posts === 0) return typeof a.created_at_ms === "number" && a.created_at_ms > 0 && a.created_at_ms <= cutoff;
+    return a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff;
+  }
   if (p.include_zero_posts && a.posts === 0) return true;
   if (a.coverage_since_ms !== null && a.coverage_since_ms <= cutoff)
     return true;

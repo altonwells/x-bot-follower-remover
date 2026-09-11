@@ -22,7 +22,7 @@ test("missing headers back off without clearing a persisted cooldown", () => {
   );
   assert.equal(
     responseLimit(new Headers(), 200, second, 1_100_001).failures,
-    0,
+    1,
   );
 });
 test("successful exhausted endpoint waits for reset; unrelated success does not invent quota", () => {

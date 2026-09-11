@@ -24,6 +24,13 @@ pub struct Scan {
     pub cursors: BTreeSet<String>,
     pub started_at: i64,
     pub following_complete: bool,
+    #[serde(default)]
+    pub collected_total: usize,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Retry {
+    pub attempts: u32,
+    pub due_ms: i64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Batch {
@@ -77,6 +84,8 @@ pub struct App {
     pub detach_requested: bool,
     pub animation: crate::ritual::Animation,
     pub auto_policy: Option<Policy>,
+    pub retries: BTreeMap<String, Retry>,
+    pub managed_run: bool,
 }
 impl App {
     pub fn new(store: Store, demo: bool) -> Result<Self> {
@@ -116,6 +125,8 @@ impl App {
         let batch = store.get(&format!("batch:{owner}"))?.flatten();
         let pacing = store.get(&format!("pacing:{owner}"))?.unwrap_or_default();
         let (removed, uncertain) = store.action_counts(&owner)?;
+        let retries = store.get(&format!("retries:{owner}"))?.unwrap_or_default();
+        let managed_run = store.get(&format!("managed:{owner}"))?.unwrap_or(false);
         Ok(Self {
             setup: None,
             store: Storage::new(store),
@@ -150,6 +161,8 @@ impl App {
             detach_requested: false,
             animation: crate::ritual::Animation::default(),
             auto_policy,
+            retries,
+            managed_run,
         })
     }
     pub fn configure_setup(&mut self, config: &crate::config::Config) {
@@ -213,7 +226,7 @@ impl App {
     pub fn log(&mut self, text: impl Into<String>) {
         self.notice = clean(&text.into());
     }
-    async fn save_processing(&mut self) -> Result<()> {
+    pub async fn save_processing(&mut self) -> Result<()> {
         let p = self.policy.clone();
         if let Some(batch) = &mut self.batch {
             batch.policy.copy_pacing(&p);
@@ -224,6 +237,53 @@ impl App {
         self.store.run(move |s| s.set("policy", &p)).await?;
         self.save_batch().await?;
         self.log("Processing settings saved. Active cooldowns finish first; new settings apply to following work.");
+        Ok(())
+    }
+    pub fn simple_running(&self) -> bool {
+        self.auto_policy.as_ref().is_some_and(|p| p.simple_cleanup)
+    }
+    pub async fn save_managed(&mut self, running: bool) -> Result<()> {
+        self.managed_run = running;
+        let key = format!("managed:{}", self.owner);
+        self.store.run(move |s| s.set(&key, &running)).await
+    }
+    async fn save_retries(&self) -> Result<()> {
+        let key = format!("retries:{}", self.owner);
+        let value = self.retries.clone();
+        self.store.run(move |s| s.set(&key, &value)).await
+    }
+    async fn retry_account(&mut self, id: &str) -> Result<()> {
+        let retry = self.retries.entry(id.to_owned()).or_default();
+        retry.attempts += 1;
+        retry.due_ms = now_ms()
+            + match retry.attempts {
+                1 => 60_000,
+                2 => 900_000,
+                3 => 21_600_000,
+                _ => 86_400_000,
+            };
+        self.save_retries().await
+    }
+    pub async fn begin_cleanup(&mut self) -> Result<()> {
+        if self.pending.is_some() || self.batch.is_some() || self.auto_policy.is_some() {
+            bail!("Finish or cancel the current job first");
+        }
+        if !self.demo && !self.capabilities.iter().any(|c| c == "simple_cleanup:1") {
+            bail!("Reload the Chrome extension to use the new 30-day cleanup");
+        }
+        let mut policy = Policy::cleanup();
+        policy.copy_pacing(&self.policy);
+        self.policy = policy.clone();
+        self.scan.phase.clear();
+        self.start_scan().await?;
+        self.auto_policy = Some(policy);
+        self.retries.clear();
+        self.save_retries().await?;
+        self.save_batch().await?;
+        self.save_managed(true).await?;
+        self.mode = Mode::Browse;
+        self.detach_requested = !self.demo;
+        self.log("Cleanup approved. Starting the background worker; activity checks and queueing are automatic.");
         Ok(())
     }
     async fn save_batch(&self) -> Result<()> {
@@ -261,6 +321,13 @@ impl App {
             .sender
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Chrome is not connected"))?;
+        if self.simple_running()
+            && !self.demo
+            && !matches!(command, Command::GetSession | Command::OpenProfile { .. })
+            && !self.capabilities.iter().any(|c| c == "simple_cleanup:1")
+        {
+            bail!("Reload the current Chrome extension before continuing cleanup");
+        }
         let work = Work {
             command_id: new_id(),
             owner_id: self.owner.clone(),
@@ -301,7 +368,7 @@ impl App {
         if self.owner.is_empty() || self.sender.is_none() {
             bail!("Connect Chrome and identify the signed-in account first");
         }
-        if self.batch.is_some() || self.uncertain > 0 {
+        if self.batch.is_some() || (self.uncertain > 0 && !self.policy.simple_cleanup) {
             bail!("Finish/cancel the removal queue and reconcile uncertain actions first (r)");
         }
         if self.pending.is_some() {
@@ -342,11 +409,38 @@ impl App {
         if self.mode == Mode::Setup {
             return self.setup_key(key).await;
         }
+        if self.mode == Mode::Browse && self.policy.simple_cleanup {
+            match key.code {
+                KeyCode::Enter if self.auto_policy.is_none() && self.batch.is_none() => {
+                    self.mode = Mode::AutoConfirm;
+                    return Ok(());
+                }
+                KeyCode::Char('s' | 'F') if self.auto_policy.is_none() && self.batch.is_none() => {
+                    self.mode = Mode::AutoConfirm;
+                    return Ok(());
+                }
+                KeyCode::Char(' ') if self.auto_policy.is_none() && self.batch.is_none() => {
+                    self.mode = Mode::AutoConfirm;
+                    return Ok(());
+                }
+                KeyCode::Char(' ') => {
+                    return Box::pin(
+                        self.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE)),
+                    )
+                    .await;
+                }
+                KeyCode::Char('i' | 'f' | 'a' | 'A' | 'd') => {
+                    self.log("Start cleanup handles collection, activity checks and queueing automatically. , opens processing settings.");
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
         // Stop controls remain available in every modal, including search.
         match key.code {
             KeyCode::Char('p') => {
                 if self.paused {
-                    if self.uncertain > 0 {
+                    if self.uncertain > 0 && !self.simple_running() {
                         bail!("Press r to reconcile uncertain actions first");
                     }
                     self.send_control("resume").await?;
@@ -359,6 +453,7 @@ impl App {
                 self.pause().await?;
                 self.batch = None;
                 self.auto_policy = None;
+                self.save_managed(false).await?;
                 self.save_batch().await?;
                 self.log("Full Auto and pending removals cancelled; an already dispatched action may finish.");
             }
@@ -435,6 +530,9 @@ impl App {
                 return Ok(());
             }
             Mode::AutoConfirm => {
+                if self.policy.simple_cleanup && key.code == KeyCode::Char('y') {
+                    return self.begin_cleanup().await;
+                }
                 if key.code == KeyCode::Char('y') {
                     if self.pending.is_some() || self.batch.is_some() || self.uncertain > 0 {
                         bail!("Finish current work and reconcile uncertain actions first");
@@ -460,9 +558,9 @@ impl App {
             Mode::Settings => {
                 match key.code {
                     KeyCode::Down | KeyCode::Char('j') => {
-                        self.filter_row = (self.filter_row + 1) % 4
+                        self.filter_row = (self.filter_row + 1) % 5
                     }
-                    KeyCode::Up | KeyCode::Char('k') => self.filter_row = (self.filter_row + 3) % 4,
+                    KeyCode::Up | KeyCode::Char('k') => self.filter_row = (self.filter_row + 4) % 5,
                     KeyCode::Char('R') => self.policy.copy_pacing(&Policy::default()),
                     KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+') => {
                         let d = if matches!(key.code, KeyCode::Left | KeyCode::Char('-')) {
@@ -470,25 +568,7 @@ impl App {
                         } else {
                             1
                         };
-                        match self.filter_row {
-                            0 => {
-                                self.policy.delay_seconds =
-                                    (self.policy.delay_seconds as i32 + d * 5).clamp(5, 300) as u32
-                            }
-                            1 => {
-                                self.policy.rest_every =
-                                    (self.policy.rest_every as i32 + d).clamp(1, 100) as u32
-                            }
-                            2 => {
-                                self.policy.rest_seconds =
-                                    (self.policy.rest_seconds as i32 + d * 30).clamp(0, 3600) as u32
-                            }
-                            3 => {
-                                self.policy.batch_limit =
-                                    (self.policy.batch_limit as i32 + d * 10).clamp(1, 500) as usize
-                            }
-                            _ => {}
-                        }
+                        self.policy.adjust_pacing(self.filter_row, d);
                     }
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char(',') => {
                         self.save_processing().await?;
@@ -557,6 +637,12 @@ impl App {
             KeyCode::Char(',') => {
                 self.filter_row = 0;
                 self.mode = Mode::Settings;
+            }
+            KeyCode::Char('S') => {
+                let mut p = Policy::cleanup();
+                p.copy_pacing(&self.policy);
+                self.policy = p;
+                self.mode = Mode::AutoConfirm;
             }
             KeyCode::Char('F') => {
                 if self.batch.is_some() || self.pending.is_some() || self.auto_policy.is_some() {
@@ -856,7 +942,7 @@ impl App {
             || self.sender.is_none()
             || Instant::now() < self.next_at
             || now_ms() < self.pacing.until_ms
-            || self.uncertain > 0
+            || (self.uncertain > 0 && !self.simple_running())
         {
             return Ok(());
         }
@@ -869,6 +955,25 @@ impl App {
             self.paused = true;
             self.log("Saved scan uses the old X adapter. Press s to refresh account evidence; keep choices are preserved.");
             return Ok(());
+        }
+        if self.simple_running() && self.uncertain > 0 {
+            let owner = self.owner.clone();
+            let unresolved = self.store.run(move |s| s.unresolved(&owner)).await?;
+            for original in unresolved {
+                if let Command::RemoveFollower { target_id, .. } = original.command
+                    && self
+                        .retries
+                        .get(&target_id)
+                        .is_none_or(|r| r.attempts < 4 && r.due_ms <= now_ms())
+                {
+                    return self
+                        .submit(Command::Reconcile {
+                            target_id,
+                            original_command_id: original.command_id,
+                        })
+                        .await;
+                }
+            }
         }
         if let Some(batch) = &mut self.batch {
             let batch_id = batch.id.clone();
@@ -891,7 +996,7 @@ impl App {
                 let account = self
                     .accounts
                     .get(&target_id)
-                    .filter(|a| a.reason(&batch.policy, now_ms()).is_ok())
+                    .filter(|a| a.approved_reason(&batch.policy, now_ms()).is_ok())
                     .cloned();
                 let Some(account) = account else {
                     self.paused = true;
@@ -928,15 +1033,49 @@ impl App {
                 .await?
             }
             "inspect" => {
+                let owner = self.owner.clone();
+                let unresolved: BTreeSet<String> = self
+                    .store
+                    .run(move |s| {
+                        Ok(s.unresolved(&owner)?
+                            .into_iter()
+                            .filter_map(|w| match w.command {
+                                Command::RemoveFollower { target_id, .. } => Some(target_id),
+                                _ => None,
+                            })
+                            .collect())
+                    })
+                    .await?;
                 let id = self
                     .ordered_followers()
                     .into_iter()
                     .find(|a| {
                         a.basic_candidate(&self.policy)
-                            && a.checked_at_ms.unwrap_or(0) < self.scan.started_at
+                            && !unresolved.contains(&a.id)
+                            && (a.checked_at_ms.unwrap_or(0) < self.scan.started_at
+                                || self.retries.contains_key(&a.id))
+                            && self
+                                .retries
+                                .get(&a.id)
+                                .is_none_or(|r| r.attempts < 4 && r.due_ms <= now_ms())
                     })
                     .map(|a| a.id.clone());
                 if let Some(target_id) = id {
+                    if self.simple_running()
+                        && self.retries.contains_key(&target_id)
+                        && self
+                            .accounts
+                            .get(&target_id)
+                            .is_some_and(|a| a.approved_reason(&self.policy, now_ms()).is_ok())
+                    {
+                        self.batch = Some(Batch {
+                            id: new_id(),
+                            ids: VecDeque::from([target_id]),
+                            policy: self.policy.clone(),
+                        });
+                        self.save_batch().await?;
+                        return Ok(());
+                    }
                     self.follow_target(&target_id, "Checking activity");
                     self.submit(Command::InspectAccount {
                         target_id,
@@ -944,6 +1083,14 @@ impl App {
                     })
                     .await?;
                 } else {
+                    if self.simple_running() && self.retries.values().any(|r| r.attempts < 4) {
+                        self.log(
+                            "Waiting for scheduled account retries. Other accounts are complete.",
+                        );
+                        self.next_at = Instant::now() + Duration::from_secs(5);
+                        return Ok(());
+                    }
+                    self.save_managed(false).await?;
                     self.scan.phase = "done".into();
                     let was_auto = self.auto_policy.take().is_some();
                     self.save_batch().await?;
@@ -1059,7 +1206,7 @@ impl App {
     }
     async fn ack(&self, id: &str) -> Result<()> {
         if let Some(tx) = &self.sender {
-            tx.send(json!({"type":"ack","session_id":self.session,"command_id":id}))
+            tx.send(json!({"type":"ack","session_id":self.session,"command_id":id,"durable":self.simple_running()}))
                 .await?;
         }
         Ok(())
@@ -1125,7 +1272,28 @@ impl App {
                 b.ids.retain(|id| id != &target);
             }
             self.save_batch().await?;
-            if status == "uncertain" || status == "failed" {
+            if self.simple_running() {
+                let fatal = status == "failed"
+                    && [
+                        "login_required:",
+                        "access_denied:",
+                        "account_changed:",
+                        "identity_mismatch:",
+                        "signing_unavailable:",
+                    ]
+                    .iter()
+                    .any(|code| message.starts_with(code));
+                if fatal {
+                    self.retry_account(&target).await?;
+                    self.paused = true;
+                    self.save_managed(false).await?;
+                } else if status == "uncertain" || status == "failed" {
+                    self.retry_account(&target).await?;
+                } else {
+                    self.retries.remove(&target);
+                    self.save_retries().await?;
+                }
+            } else if status == "uncertain" || status == "failed" {
                 self.detach_requested = false;
                 self.paused = true;
             }
@@ -1184,11 +1352,20 @@ impl App {
                 if let Some(auto) = &self.auto_policy {
                     self.policy = auto.clone();
                 }
+                let key = format!("retries:{}", self.owner);
+                self.retries = self
+                    .store
+                    .run(move |s| Ok(s.get(&key)?.unwrap_or_default()))
+                    .await?;
                 self.refresh_counts().await?;
                 if self.mode == Mode::Setup {
                     self.setup.as_mut().unwrap().go(Step::Ready);
                 }
-                self.log("Ready. s scans; p resumes saved work; r reconciles uncertain actions.");
+                self.log(if self.policy.simple_cleanup {
+                    "Ready. Enter starts cleanup; checks and queueing run automatically."
+                } else {
+                    "Ready. s scans; p resumes saved work; r reconciles uncertain actions."
+                });
             }
             WorkResult::Page {
                 list,
@@ -1245,6 +1422,11 @@ impl App {
                         self.scan.following_complete = true;
                         self.scan.phase = "followers".into();
                     } else {
+                        self.scan.collected_total = self
+                            .accounts
+                            .values()
+                            .filter(|a| a.follows_me == Some(true))
+                            .count();
                         self.scan.phase = if self.auto_policy.is_some() {
                             "inspect"
                         } else {
@@ -1279,6 +1461,20 @@ impl App {
                         ids: VecDeque::from([account.id.clone()]),
                         policy: policy.clone(),
                     });
+                }
+                if self.simple_running() {
+                    let reason = account.reason(&self.policy, now_ms());
+                    if (account.protected.is_none())
+                        || (account.posts == Some(0) && account.created_at_ms.is_none())
+                        || reason == Err("Activity unavailable; retry later")
+                        || reason == Err("Verification not checked")
+                        || reason == Err("Following relationship unknown")
+                    {
+                        self.retry_account(&account.id).await?;
+                    } else if reason.is_err() {
+                        self.retries.remove(&account.id);
+                        self.save_retries().await?;
+                    }
                 }
                 let (owner, copy, batch) =
                     (self.owner.clone(), account.clone(), self.batch.clone());
@@ -1323,6 +1519,20 @@ impl App {
                 message,
                 retry_at_ms,
             } => {
+                if self.simple_running()
+                    && matches!(
+                        code.as_str(),
+                        "http_404" | "operation_unavailable" | "invalid_response" | "worker_error"
+                    )
+                    && let Command::InspectAccount { target_id, .. }
+                    | Command::Reconcile { target_id, .. } = &w.command
+                {
+                    self.retry_account(target_id).await?;
+                    self.log(format!(
+                        "Retry later: {message}. Continuing other accounts."
+                    ));
+                    return Ok(());
+                }
                 if let Command::RemoveFollower { target_id, .. } = &w.command {
                     self.apply_action(
                         w,
@@ -1334,13 +1544,12 @@ impl App {
                     )
                     .await?;
                 }
-                let retry_read =
-                    !matches!(
-                        w.command,
-                        Command::RemoveFollower { .. }
-                            | Command::GetSession
-                            | Command::Reconcile { .. }
-                    ) && matches!(code.as_str(), "rate_limited" | "network_unavailable");
+                let retry_read = !matches!(
+                    w.command,
+                    Command::RemoveFollower { .. } | Command::GetSession
+                ) && (!matches!(w.command, Command::Reconcile { .. })
+                    || self.simple_running())
+                    && matches!(code.as_str(), "rate_limited" | "network_unavailable");
                 if matches!(code.as_str(), "rate_limited" | "network_unavailable") {
                     self.pacing.retry(retry_at_ms, &code);
                 }

@@ -33,6 +33,7 @@ export function parseUser(raw: Obj): Account {
     followers: count(u.relationship_counts?.followers ?? l.followers_count),
     following_count: count(u.relationship_counts?.following ?? l.friends_count),
     posts: count(u.tweet_counts?.tweets ?? l.statuses_count),
+    created_at_ms: Number.isFinite(Date.parse(u.core?.created_at ?? l.created_at)) ? Date.parse(u.core?.created_at ?? l.created_at) : null,
     verified,
     protected: bool(u.privacy?.protected ?? l.protected),
     follows_me: bool(r.followed_by ?? l.followed_by),
@@ -175,12 +176,14 @@ export function postingEvidence(
   target: string,
   cutoff: number,
   repostsOnly = false,
-): { latest: number | null; coverage: number | null; note: string } {
+): { latest: number | null; coverage: number | null; note: string; cursor?: string | null; blocked?: boolean } {
   const times: number[] = [];
   let malformed = false;
   let chronological = false;
   let terminated = false;
-  const take = (raw: Obj) => {
+  let cursor: string | null = null;
+  let entriesSeen = 0;
+  const take = (raw: Obj, conversationContext = false) => {
     let t = raw?.tweet ?? raw?.result ?? raw;
     if (t?.__typename === "TweetWithVisibilityResults") t = t.tweet;
     const l = t?.legacy ?? t;
@@ -193,7 +196,7 @@ export function postingEvidence(
       return;
     }
     if (actor !== target) {
-      if (repostsOnly) malformed = true; // Original-post time cannot date a repost action.
+      if (repostsOnly || !conversationContext) malformed = true; // A foreign standalone post may be an undated repost.
       return;
     }
     const at = Date.parse(l?.created_at ?? "");
@@ -205,47 +208,65 @@ export function postingEvidence(
     for (const t of json) take(t);
   } else {
     for (const i of instructions(json)) {
+      if (i.type === "TimelinePinEntry") {
+        const start = times.length;
+        const wasMalformed = malformed;
+        const item = i.entry?.content?.itemContent ?? i.entry?.content;
+        if (item?.tweet_results?.result) take(item.tweet_results.result);
+        // A recent authored pin proves activity. An old pin cannot prove inactivity.
+        times.splice(start, times.length - start, ...times.slice(start).filter((t) => t > cutoff));
+        malformed = wasMalformed;
+        continue;
+      }
       if (i.type === "TimelineTerminateTimeline" && i.direction === "Bottom")
         terminated = true;
       if (i.type !== "TimelineAddEntries" && i.type !== "TimelineReplaceEntry")
         continue;
       if (i.type === "TimelineAddEntries") chronological = true;
-      for (const e of i.entries ?? [i.entry])
-        if (e) {
-          const content = e.content;
-          if (content?.cursorType) continue;
-          const item = content?.itemContent;
-          if (item?.tweet_results?.result) take(item.tweet_results.result);
-          else {
-            // Modules, tombstones and unknown entry shapes cannot prove negative activity.
-            malformed = true;
-            walk(content, (o) => {
-              if (o.tweet_results?.result) take(o.tweet_results.result);
-            });
-          }
+      for (const e of i.entries ?? [i.entry]) {
+        if (!e) continue;
+        if (e.entryId?.startsWith("promoted-") || e.content?.itemContent?.promotedMetadata) continue;
+        const content = e.content;
+        if (content?.cursorType) {
+          if (content.cursorType === "Bottom" && typeof content.value === "string") cursor = content.value;
+          continue;
         }
+        entriesSeen++;
+        const items = content?.items
+          ? content.items.map((part: Obj) => part.item?.itemContent ?? part.itemContent)
+          : [content?.itemContent];
+        for (const item of items) {
+          if (item?.tweet_results?.result) take(item.tweet_results.result, Array.isArray(content?.items));
+          else malformed = true;
+        }
+      }
     }
   }
   const latest = times.length ? Math.max(...times) : null;
+  const metadata = { cursor: cursor === "0" ? null : cursor, blocked: malformed };
   if (latest !== null && latest > cutoff)
     return {
+      ...metadata,
       latest,
       coverage: cutoff,
       note: "Recent posting action observed (including replies/reposts).",
     };
   if (latest !== null && !malformed && chronological)
     return {
+      ...metadata,
       latest,
       coverage: cutoff,
       note: "Latest visible chronological posting actions predate the cutoff.",
     };
-  if (latest === null && !malformed && chronological && terminated)
+  if (latest === null && !malformed && chronological && (terminated || cursor === "0" || (!Array.isArray(json) && entriesSeen === 0 && cursor === null)))
     return {
+      ...metadata,
       latest: null,
       coverage: cutoff,
       note: "X explicitly completed an empty activity timeline.",
     };
   return {
+    ...metadata,
     latest,
     coverage: null,
     note: "No adequate posting evidence returned; activity remains unknown.",

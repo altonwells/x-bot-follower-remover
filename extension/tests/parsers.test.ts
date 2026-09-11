@@ -339,3 +339,35 @@ test("unrecognized relationship flags cannot establish absence", () => {
     ),
   );
 });
+
+test("normal conversation modules and empty channels establish inactivity without trusting pins", () => {
+  const raw = { instructions: [
+    { type: "TimelinePinEntry", entry: { content: { itemContent: { tweet_results: { result: { legacy: { user_id_str: "42", created_at: "2019-01-01" } } } } } } },
+    { type: "TimelineAddEntries", entries: [{ content: { items: [
+      { item: { itemContent: { tweet_results: { result: { legacy: { user_id_str: "other", created_at: "2026-09-10" } } } } } },
+      { item: { itemContent: { tweet_results: { result: { legacy: { user_id_str: "42", created_at: "2020-01-01" } } } } } },
+    ] } }] }
+  ] };
+  const cutoff=Date.parse("2026-08-10");
+  assert.equal(postingEvidence(raw,"42",cutoff).coverage,cutoff);
+  assert.equal(postingEvidence(raw,"42",cutoff).latest,Date.parse("2020-01-01"));
+  (raw.instructions[0] as any).entry.content.itemContent.tweet_results.result.legacy.created_at="2026-09-10";
+  assert.equal(postingEvidence(raw,"42",cutoff).latest,Date.parse("2026-09-10"));
+  assert.equal(postingEvidence({instructions:[{type:"TimelineAddEntries",entries:[]}]},"42",cutoff).coverage,cutoff);
+  assert.equal(postingEvidence({instructions:[{type:"TimelineAddEntries",entries:[{content:{cursorType:"Bottom",value:"next"}}]}]},"42",cutoff).coverage,null);
+});
+
+test("approved simple checks survive days and do not turn recent posts into old approvals", () => {
+  const f=JSON.parse(readFileSync("../protocol/fixtures/policy.json","utf8"));
+  const p={...f.policy,simple_cleanup:true,inactive_days:30};
+  assert.equal(eligible(f.account,p,f.now_ms+3*86400000,true),true);
+  assert.equal(eligible({...f.account,last_activity_ms:f.now_ms},p,f.now_ms+31*86400000,true),false);
+});
+
+test("a standalone foreign post cannot silently prove absence of recent reposts", () => {
+  const raw={instructions:[{type:"TimelineAddEntries",entries:[
+    {content:{itemContent:{tweet_results:{result:{legacy:{user_id_str:"other",created_at:"2020-01-01"}}}}}},
+    {content:{itemContent:{tweet_results:{result:{legacy:{user_id_str:"42",created_at:"2020-01-02"}}}}}},
+  ]}]};
+  assert.equal(postingEvidence(raw,"42",Date.parse("2026-08-10")).coverage,null);
+});

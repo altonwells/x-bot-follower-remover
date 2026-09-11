@@ -16,6 +16,10 @@ pub fn new_id() -> String {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Policy {
+    #[serde(default)]
+    pub simple_cleanup: bool,
+    #[serde(default)]
+    pub keep_awake: bool,
     pub inactive_days: u32,
     pub skip_verified: bool,
     pub skip_following: bool,
@@ -33,6 +37,8 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
+            simple_cleanup: false,
+            keep_awake: false,
             inactive_days: 90,
             skip_verified: true,
             skip_following: true,
@@ -47,7 +53,26 @@ impl Default for Policy {
 }
 
 impl Policy {
+    pub fn cleanup() -> Self {
+        Self {
+            simple_cleanup: true,
+            inactive_days: 30,
+            sparse_old_max_posts: 0,
+            ..Self::default()
+        }
+    }
+    pub fn adjust_pacing(&mut self, row: usize, delta: i32) {
+        match row {
+            0 => self.delay_seconds = (self.delay_seconds as i32 + delta * 5).clamp(5, 300) as u32,
+            1 => self.rest_every = (self.rest_every as i32 + delta).clamp(1, 100) as u32,
+            2 => self.rest_seconds = (self.rest_seconds as i32 + delta * 30).clamp(0, 3600) as u32,
+            3 => self.batch_limit = (self.batch_limit as i32 + delta * 10).clamp(1, 500) as usize,
+            4 => self.keep_awake = !self.keep_awake,
+            _ => {}
+        }
+    }
     pub fn copy_pacing(&mut self, source: &Self) {
+        self.keep_awake = source.keep_awake;
         self.delay_seconds = source.delay_seconds;
         self.batch_limit = source.batch_limit;
         self.rest_every = source.rest_every;
@@ -64,6 +89,8 @@ pub struct Account {
     pub followers: Option<u64>,
     pub following_count: Option<u64>,
     pub posts: Option<u64>,
+    #[serde(default)]
+    pub created_at_ms: Option<i64>,
     pub verified: Option<bool>,
     pub protected: Option<bool>,
     pub follows_me: Option<bool>,
@@ -112,6 +139,16 @@ impl Account {
         Ok(())
     }
 
+    pub fn approved_reason(&self, p: &Policy, now: i64) -> Result<&'static str, &'static str> {
+        self.reason(
+            p,
+            if p.simple_cleanup {
+                self.checked_at_ms.unwrap_or(now).min(now)
+            } else {
+                now
+            },
+        )
+    }
     pub fn reason(&self, p: &Policy, now: i64) -> Result<&'static str, &'static str> {
         self.basic_reason(p)?;
         let Some(checked) = self.checked_at_ms else {
@@ -123,6 +160,20 @@ impl Account {
         let cutoff = now - i64::from(p.inactive_days) * 86_400_000;
         if self.last_activity_ms.is_some_and(|t| t > cutoff) {
             return Err("Recently active");
+        }
+        if p.simple_cleanup {
+            if self.posts == Some(0) {
+                return if self.created_at_ms.is_some_and(|t| t > 0 && t <= cutoff) {
+                    Ok("No posts in 30 days")
+                } else {
+                    Err("Account age not established / under 30 days")
+                };
+            }
+            return if self.coverage_since_ms.is_some_and(|t| t <= cutoff) {
+                Ok("No posts in 30 days")
+            } else {
+                Err("Activity unavailable; retry later")
+            };
         }
         if p.include_zero_posts && self.posts == Some(0) {
             return Ok("Zero current posts");

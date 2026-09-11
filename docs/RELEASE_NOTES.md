@@ -1,8 +1,10 @@
-forgive-me v0.1.11 adds System Settings, Full Auto, and a continuous cleanup animation.
+forgive-me v0.2.0 simplifies cleanup to one rule and one approval.
 
-- Press comma for actual queue controls: removal interval, attempts per batch, rest between batches, and hourly limit. Shift+R selects the recommended starting configuration: 60 seconds, 20 attempts, 5-minute rest, 50 per hour. Current cooldowns finish first; X limits always apply.
-- Shift+F reviews Full Auto for the entire follower list. After approval it collects fresh relationship lists, checks accounts in order, and removes eligible accounts using saved activity evidence. Verified accounts, people you follow, keep exceptions, and recent activity remain protected. One complete pass then stops.
-- Full Auto and batch/rest progress persist. Pause, cancel, reconnect, and background handoff use the existing controller. Activity results and automatic queue entries save in one transaction.
-- The animation pours continuously through cooldowns. Confirmed accounts float down the stream in small REMOVED tags. Unconfirmed attempts never add removal tags or counts.
+- Remove followers with no posts in 30 days, who are not verified and whom you do not follow. No sparse-account or statistical override. Posts, replies and reposts count as activity; empty accounts must be at least 30 days old.
+- Enter then y starts collection, checking, queueing and removal in a background worker. q closes the monitor without stopping the job. Space pauses; comma controls pacing and idle-sleep prevention.
+- Repair activity parsing for conversation modules, empty channels, pagination and combined-timeline fallback. Inspection and approval use one cutoff timestamp.
+- Persist retries and recover uncertain removals automatically. One unreadable account does not stop the pass. Failed-removal retry budgets survive reinspection. Authentication failures still pause work.
+- Preserve saved approval through multi-day queues without fetching activity timelines again. Current verification and relationship protections are checked before removal.
+- Preserve explicit pauses across process restarts. Older approved queues keep their original rules.
 
-Restart forgive-me to use the update. Reload the bundled Chrome extension to show the matching version. Open sessions are not terminated by installation. No live follower removals were used to test this release.
+Install the update, reload the Chrome extension, and restart forgive-me. Stop an older background worker first with forgive-me stop. No live removals were run during development.

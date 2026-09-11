@@ -248,3 +248,96 @@ async fn full_auto_worker_resumes_collection_without_an_existing_removal_batch()
         .unwrap();
     worker.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn simple_worker_preserves_pause_after_process_restart_and_accepts_only_pacing_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("cleanup.sqlite");
+    let store = Store::open(&db).unwrap();
+    let policy = forgive_me::model::Policy::cleanup();
+    store.set("last_owner", &"1").unwrap();
+    store.set("auto:1", &Some(policy.clone())).unwrap();
+    store.set("managed:1", &true).unwrap();
+    store
+        .set(
+            "scan:1",
+            &forgive_me::app::Scan {
+                phase: "following".into(),
+                adapter_revision: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let pace = forgive_me::pacing::Pacing {
+        until_ms: forgive_me::model::now_ms() + 3600000,
+        ..Default::default()
+    };
+    store.set("pacing:1", &pace).unwrap();
+    drop(store);
+    for restart in [false, true] {
+        let app = App::new(Store::open(&db).unwrap(), false).unwrap();
+        let (events, rx) = mpsc::channel(16);
+        let path = dir.path().to_path_buf();
+        let worker = tokio::spawn(async move { background::run(app, rx, &path).await });
+        for _ in 0..100 {
+            if dir.path().join("worker.sock").exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let (tx, mut browser) = mpsc::channel(16);
+        events
+            .send(BridgeEvent::Connected {
+                session_id: "s".into(),
+                sender: tx,
+            })
+            .await
+            .unwrap();
+        let request = browser.recv().await.unwrap();
+        events
+            .send(BridgeEvent::Message(ClientMessage::Result {
+                session_id: "s".into(),
+                command_id: request["work"]["command_id"].as_str().unwrap().into(),
+                result: WorkResult::Session {
+                    owner_id: "1".into(),
+                    handle: "example".into(),
+                    capabilities: vec![
+                        "adapter:2".into(),
+                        "durable_queue:1".into(),
+                        "simple_cleanup:1".into(),
+                    ],
+                },
+            }))
+            .await
+            .unwrap();
+        // Ack proves the Session has been applied before reading status.
+        browser.recv().await.unwrap();
+        let status = background::request(dir.path(), Control::Status)
+            .await
+            .unwrap();
+        assert_eq!(
+            status.state,
+            if restart { "Paused" } else { "Cooling down" }
+        );
+        let mut changed = policy.clone();
+        changed.delay_seconds = 10;
+        changed.skip_verified = false;
+        let status = background::request(dir.path(), Control::Settings { policy: changed })
+            .await
+            .unwrap();
+        assert_eq!(status.policy.delay_seconds, 10);
+        assert!(status.policy.skip_verified);
+        assert!(status.wait_seconds > 3500);
+        background::request(dir.path(), Control::Pause)
+            .await
+            .unwrap();
+        background::request(dir.path(), Control::Stop)
+            .await
+            .unwrap();
+        worker.await.unwrap().unwrap();
+        assert_eq!(
+            Store::open(&db).unwrap().get::<bool>("managed:1").unwrap(),
+            Some(false)
+        );
+    }
+}

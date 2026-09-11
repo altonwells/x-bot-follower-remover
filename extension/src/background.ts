@@ -204,7 +204,7 @@ async function handle(event: MessageEvent, ws: WebSocket): Promise<void> {
     .then(async () => {
       if (taskSession !== session) return;
       if (msg.type === "ack") {
-        await runner.ack(msg.command_id);
+        await runner.ack(msg.command_id, msg.durable === true);
         return;
       }
       let result: Result;

@@ -60,6 +60,37 @@ pub fn render(frame: &mut Frame, app: &mut App, tick: u64) {
         crate::setup::render(frame, app);
         return;
     }
+    if app.policy.simple_cleanup && app.auto_policy.is_none() && app.batch.is_none() {
+        let [header, body, footer] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(2),
+        ])
+        .areas(area.inner(Margin::new(2, 1)));
+        render_header(frame, app, header);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::styled("Remove inactive followers", bold(MINT)),
+                Line::from(""),
+                Line::from("No posts in 30 days."),
+                Line::from("Always keep verified accounts and people you follow."),
+                Line::from("Posts, replies and reposts count as activity."),
+                Line::from(""),
+                Line::from("Checks, queueing and retries run automatically in the background."),
+                Line::from("Close the terminal; reopen forgive-me to see progress."),
+                Line::from(""),
+                Line::styled(clean(&app.notice), fg(MUTED)),
+            ])
+            .wrap(Wrap { trim: false }),
+            body,
+        );
+        frame.render_widget(
+            Paragraph::new("Enter Start cleanup    , Settings    q Quit").style(bold(MINT)),
+            footer,
+        );
+        render_modal(frame, app);
+        return;
+    }
     let spacious = area.height >= 28 && area.width >= 80;
     let area = area.inner(Margin::new(1, 0));
     let [header, metrics, progress, body, footer] = Layout::vertical([
@@ -695,6 +726,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                     format!("{} seconds", app.policy.rest_seconds),
                 ),
                 ("Hourly attempt limit", app.policy.batch_limit.to_string()),
+                ("Keep Mac awake", on(app.policy.keep_awake).to_string()),
             ];
             let mut lines = vec![
                 Line::styled("Controls real queue processing", bold(TEXT)),
@@ -741,10 +773,34 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 frame,
                 " SYSTEM SETTINGS ",
                 lines,
-                (72, 17),
+                (72, 18),
                 "↑ ↓ choose · ← → adjust · Enter / Esc saves",
                 0,
                 ICE,
+            );
+        }
+        Mode::AutoConfirm if app.policy.simple_cleanup => {
+            popup(
+                frame,
+                " START CLEANUP ",
+                vec![
+                    Line::styled(
+                        format!(
+                            "Start cleanup for @{}?",
+                            clean(&app.handle).chars().take(20).collect::<String>()
+                        ),
+                        bold(TEXT),
+                    ),
+                    Line::from("No posts in 30 days."),
+                    Line::from("Keep verified accounts and people you follow."),
+                    Line::from("Posts, replies and reposts count."),
+                    Line::from("Checks and removal run in the background."),
+                    Line::styled("There is no restore-followers action.", bold(RED)),
+                ],
+                (76, 12),
+                "y Start cleanup    Enter / Esc Cancel",
+                0,
+                MINT,
             );
         }
         Mode::AutoConfirm => {
@@ -1096,4 +1152,175 @@ fn number(n: u64) -> String {
             out.push(c);
             out
         })
+}
+
+pub fn render_worker(
+    frame: &mut Frame,
+    state: &crate::background::Status,
+    settings: Option<&(crate::model::Policy, usize)>,
+    details: bool,
+    confirm_start: bool,
+) {
+    let area = frame.area();
+    frame.render_widget(Block::default().style(fg(TEXT).bg(BG)), area);
+    let [header, summary, body, footer] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(4),
+        Constraint::Min(1),
+        Constraint::Length(2),
+    ])
+    .areas(area.inner(Margin::new(2, 1)));
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::styled(
+                format!(
+                    "◆ forgive-me   @{}   {}",
+                    clean(&state.handle),
+                    clean(&state.state)
+                ),
+                bold(MINT),
+            ),
+            Line::styled(
+                if state.policy.simple_cleanup {
+                    "No posts in 30 days · Not verified · You don't follow".into()
+                } else {
+                    format!(
+                        "Legacy approved queue · {}-day rule · original protections",
+                        state.policy.inactive_days
+                    )
+                },
+                fg(MUTED),
+            ),
+        ]),
+        header,
+    );
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::styled(
+                format!(
+                    "Checked {} / {}    Queued {}    Removed {}",
+                    state.checked, state.collected, state.remaining, state.removed
+                ),
+                bold(TEXT),
+            ),
+            Line::from(format!(
+                "Kept {}    Retry later {}    Next task {}s",
+                state.kept, state.retry_later, state.wait_seconds
+            )),
+            Line::styled(clean(&state.message), fg(ICE)),
+        ])
+        .wrap(Wrap { trim: false }),
+        summary,
+    );
+    let mut lines = vec![Line::styled(
+        format!("{:24} {:16} {}", "ACCOUNT", "LAST ACTIVITY", "STATUS"),
+        fg(MUTED),
+    )];
+    for (handle, date, status) in &state.rows {
+        lines.push(Line::styled(
+            format!(
+                "@{:<23} {:16} {}",
+                clean(handle),
+                clean(date),
+                clean(status)
+            ),
+            if status == "Working" {
+                bold(MINT)
+            } else {
+                fg(TEXT)
+            },
+        ));
+    }
+    if details {
+        lines = vec![
+            Line::from("This worker continues when the terminal closes."),
+            Line::from("Chrome must stay signed in. The Mac must be awake."),
+            Line::from(format!(
+                "{}s interval · {} attempts/batch · {}s rest · {}/hour",
+                state.policy.delay_seconds,
+                state.policy.rest_every,
+                state.policy.rest_seconds,
+                state.policy.batch_limit
+            )),
+            Line::from(state.estimate_seconds.map(|s| format!("Estimated remaining pass: about {}h, based on progress so far; retries may extend it.", (s+3599)/3600)).unwrap_or_else(|| "Finish estimate appears after 20 activity checks.".into())),
+            Line::from(format!(
+                "{} unresolved outcomes are recorded for recovery.",
+                state.uncertain
+            )),
+            Line::from(
+                "Activity is checked once near removal. Saved approval does not expire mid-queue.",
+            ),
+            Line::from("c cancels the job. x stops the worker and saves progress."),
+        ];
+    }
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
+    frame.render_widget(
+        Paragraph::new(if state.state == "No queued work" {
+            "Enter Start cleanup    , Settings    q Close view"
+        } else {
+            "Space Pause/Resume    , Settings    Enter Details    q Close view"
+        })
+        .style(bold(MINT))
+        .wrap(Wrap { trim: false }),
+        footer,
+    );
+    if let Some((policy, row)) = settings {
+        let choices = [
+            (
+                "Removal interval",
+                format!("{} seconds", policy.delay_seconds),
+            ),
+            ("Attempts per batch", policy.rest_every.to_string()),
+            (
+                "Rest between batches",
+                format!("{} seconds", policy.rest_seconds),
+            ),
+            ("Hourly attempt limit", policy.batch_limit.to_string()),
+            ("Keep Mac awake", on(policy.keep_awake).to_string()),
+        ];
+        let mut lines: Vec<Line> = choices
+            .iter()
+            .enumerate()
+            .map(|(i, (label, value))| {
+                Line::styled(
+                    format!(
+                        "{} {label:24} ◀ {value} ▶",
+                        if i == *row { "›" } else { " " }
+                    ),
+                    if i == *row { bold(MINT) } else { fg(TEXT) },
+                )
+            })
+            .collect();
+        lines.push(Line::from(
+            "R Recommended: 60s · 20/batch · 5m rest · 50/hour",
+        ));
+        lines.push(Line::styled("Active cooldowns finish first.", fg(AMBER)));
+        popup(
+            frame,
+            " PROCESSING SETTINGS ",
+            lines,
+            (72, 14),
+            "↑ ↓ Choose    ← → Adjust    Enter / Esc Save",
+            0,
+            ICE,
+        );
+    }
+    if confirm_start {
+        popup(
+            frame,
+            " START CLEANUP ",
+            vec![
+                Line::from(format!(
+                    "Remove matching followers from @{}?",
+                    clean(&state.handle)
+                )),
+                Line::from("No posts in 30 days; not verified; you don't follow."),
+                Line::styled("There is no restore-followers action.", bold(RED)),
+            ],
+            (72, 10),
+            "y Start cleanup    Enter / Esc Cancel",
+            0,
+            MINT,
+        );
+    }
 }

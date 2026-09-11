@@ -442,3 +442,33 @@ test("new relationship protections override saved clearance", async (t) => {
   if (result.kind === "action") assert.equal(result.status, "skipped");
   assert(!f.calls.some((c) => c.init?.method === "POST"));
 });
+
+test("activity cutoff and approval timestamp agree exactly across clock movement", async (t) => {
+  const f=await fixture(t,(u)=>{
+    if(u.pathname.endsWith("UserByRestId")) return Response.json({data:{user:{result:modern()}}});
+    return Response.json(timeline("2020-01-01"));
+  });
+  let now=Date.now();t.mock.method(Date,"now",()=>++now);
+  const a=await f.client.inspect("1","2",policy);
+  assert.equal(a.coverage_since_ms,a.checked_at_ms!-30*86400000);
+  const {eligible}=await import("../src/protocol");
+  assert.equal(eligible(a,{...policy,simple_cleanup:true},now+3*86400000,true),true);
+});
+
+test("empty first activity page follows its cursor and modules yield the latest authored post", async (t) => {
+  const f=await fixture(t,(u)=>{
+    const op=u.pathname.split("/").pop();
+    if(op==="UserByRestId") return Response.json({data:{user:{result:modern()}}});
+    if(op==="UserOriginalsTimeline") {
+      const variables=JSON.parse(u.searchParams.get("variables")!);
+      if(!variables.cursor) return Response.json({instructions:[{type:"TimelineAddEntries",entries:[{content:{cursorType:"Bottom",value:"second"}}]}]});
+      return Response.json(timeline("2020-01-01"));
+    }
+    return Response.json(empty());
+  });
+  const a=await f.client.inspect("1","2",policy);
+  assert(a.coverage_since_ms!==null);
+  const calls=f.calls.filter(c=>c.url.pathname.endsWith("UserOriginalsTimeline"));
+  assert.equal(calls.length,2);
+  assert.equal(JSON.parse(calls[1].url.searchParams.get("variables")!).cursor,"second");
+});

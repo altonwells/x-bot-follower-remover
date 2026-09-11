@@ -247,3 +247,33 @@ fn auto_consent_and_system_settings_fit_small_terminals() {
         assert!(text.contains("Enter / Esc saves"));
     }
 }
+
+#[test]
+fn simple_start_and_worker_controls_stay_visible_at_small_sizes() {
+    let mut app = app();
+    app.policy = forgive_me::model::Policy::cleanup();
+    for (w, h) in [(52, 12), (120, 34)] {
+        app.mode = Mode::Browse;
+        let text = screen(&mut app, w, h, 0);
+        assert!(text.contains("Enter Start cleanup"));
+        assert!(!text.contains("sparse"));
+        app.mode = Mode::AutoConfirm;
+        let text = screen(&mut app, w, h, 0);
+        assert!(text.contains("restore-followers"));
+        assert!(text.contains("y Start cleanup"));
+        let state:forgive_me::background::Status=serde_json::from_value(serde_json::json!({"handle":"example","state":"Running","remaining":3,"removed":9,"uncertain":1,"wait_seconds":42,"message":"Checking account"})).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal
+            .draw(|f| ui::render_worker(f, &state, None, false, false))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(text.contains("Close view"));
+        assert!(text.contains("Pause/Resume"));
+    }
+}

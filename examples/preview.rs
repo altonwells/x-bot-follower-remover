@@ -24,8 +24,11 @@ fn color(c: Color) -> String {
     }
 }
 fn capture(app: &mut App, name: &str, w: u16, h: u16) -> Value {
+    capture_frame(name, w, h, |f| ui::render(f, app, 8))
+}
+fn capture_frame(name: &str, w: u16, h: u16, render: impl FnOnce(&mut ratatui::Frame)) -> Value {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    terminal.draw(|f| ui::render(f, app, 8)).unwrap();
+    terminal.draw(render).unwrap();
     let b = terminal.backend().buffer();
     json!({ "name": name, "width": w, "height": h, "cells": b.content.iter().map(|c| json!({
         "text": c.symbol(), "fg": color(c.fg), "bg": color(c.bg), "bold": c.modifier.contains(Modifier::BOLD),
@@ -83,6 +86,7 @@ fn main() {
             240
         };
         let a = Account {
+            created_at_ms: Some(now - 365 * 86_400_000),
             id: i.to_string(),
             handle: name.to_string(),
             name: name.replace('_', " "),
@@ -186,5 +190,26 @@ fn main() {
         Some("signing_unavailable: X request signing could not be prepared.".into());
     app.notice = "Chrome is paired. Retry the X check after refreshing discovery.".into();
     scenes.push(capture(&mut app, "account-error", 120, 34));
+    app.mode = Mode::Browse;
+    app.auto_policy = None;
+    app.batch = None;
+    app.policy = forgive_me::model::Policy::cleanup();
+    app.handle = "demo_account".into();
+    app.notice = "Ready. Enter starts cleanup.".into();
+    scenes.push(capture(&mut app, "simple-start", 120, 34));
+    app.mode = Mode::AutoConfirm;
+    scenes.push(capture(&mut app, "simple-confirm-minimum", 52, 12));
+    let state: forgive_me::background::Status = serde_json::from_value(json!({
+        "handle":"demo_account", "state":"Cooling down", "remaining":1,"removed":29,"uncertain":1,
+        "wait_seconds":42,"message":"Next: checking @quiet_orbit. One account is scheduled for recovery.",
+        "collected":3048,"checked":81,"kept":52,"retry_later":1,"policy":app.policy,
+        "rows":[["quiet_orbit","62d ago","Working"],["copper_echo","Not checked","Waiting"],["old_orbit","703d ago","Retry later"],["studio_friend","Today","Keep: you follow"]]
+    })).unwrap();
+    scenes.push(capture_frame("simple-worker", 120, 34, |f| {
+        ui::render_worker(f, &state, None, false, false)
+    }));
+    scenes.push(capture_frame("simple-worker-settings", 120, 34, |f| {
+        ui::render_worker(f, &state, Some(&(app.policy.clone(), 0)), false, false)
+    }));
     println!("{}", serde_json::to_string(&scenes).unwrap());
 }

@@ -10,7 +10,7 @@ export function responseLimit(
   now = Date.now(),
 ): LimitState {
   const limited = status === 429;
-  const failures = limited ? Math.min((previous?.failures ?? 0) + 1, 8) : 0;
+  const failures = limited ? Math.min((previous?.failures ?? 0) + 1, 8) : Math.max(0, (previous?.failures ?? 0) - 1);
   const reset = Number(headers.get("x-rate-limit-reset")) * 1000;
   const retry = headers.get("retry-after");
   const retryAt =

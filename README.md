@@ -1,40 +1,32 @@
 # forgive-me
 
-Control who follows you on X.
+Remove inactive followers from your X account.
 
 ## Why
 
-Bought followers and unwanted accounts can leave you with a follower list you did not choose.
-forgive-me helps you examine that list and remove unwanted followers.
-You set the rules. You approve each removal batch.
+You want a follower list you chose. One clear rule should be enough to clean it.
 
 ## How
 
-The app separates the work into four steps:
+Remove a follower when all three conditions are true:
 
-1. **Collect.** The Chrome extension reads your followers and the accounts you follow.
-2. **Check activity.** You start the activity check. Missing evidence stays unknown.
-3. **Review.** The terminal marks removal candidates and explains which accounts are protected.
-4. **Remove.** You approve the queue. The extension checks each target again and removes one follower at a time. The controller can run in the background.
+- They have not posted in 30 days.
+- You do not follow them.
+- They are not verified.
 
-X login data stays in Chrome. The app stores account data and progress on your computer.
-Unknown identity, verification, or relationship data excludes the account. Sparse accounts with old observed posts can qualify with incomplete timeline coverage.
-The app does not repeat a removal automatically after an uncertain result.
+Posts, replies, and reposts count as activity. Likes do not count.
+Keep exceptions remain protected. A zero-post account must be at least 30 days old.
+An unreadable result goes to a retry list; it is not treated as inactivity.
+Post counts, usernames, and statistical scores do not authorize removal.
 
-## What you can do
+Press **Enter**, review the rule, then **y** to start. The app collects the follower list, checks accounts in order, and queues matches automatically.
+The worker runs in the background from the start. Close the terminal and open `forgive-me` later to see progress.
 
-- Find inactive followers, empty accounts, and sparse accounts with old observed posts.
-- Exclude verified accounts and accounts you follow.
-- Keep specific accounts, even when they meet your removal rules.
-- Search the collected followers and examine account details.
-- Approve removal batches, pause work, or cancel the remaining removals.
-- See confirmed removals and results that need further examination.
+## What runs where
 
-The app has a fullscreen terminal interface and a Chrome extension.
-It removes followers through X's `RemoveFollower` action.
-The accounts you follow do not change.
-
-![Follower list and account details. All accounts in this image are fictional.](docs/previews/dashboard.png)
+Chrome reads X and removes followers through `RemoveFollower`. Login data stays in Chrome.
+The local Rust worker stores progress and receipts in SQLite. The TUI controls the worker.
+The app does not unfollow accounts you follow.
 
 ## Install
 
@@ -82,7 +74,7 @@ Keep the terminal open during these steps.
 6. The extension pairs with the terminal automatically.
 7. Select **Open X** in the extension and sign in to your X account.
 8. Check that the terminal shows the correct account.
-9. Press Enter to open the follower list.
+9. Press Enter to open the cleanup screen.
 
 Chrome requires you to confirm the extension installation once.
 You do not need to enter a port or pairing secret.
@@ -99,145 +91,89 @@ Select **Connect automatically** if it does not connect.
 **Shift+P** opens the terminal guide again.
 Manual pairing remains available under **Manual connection and repair**.
 
-## Remove unwanted followers
+## Start cleanup
 
-Keep Chrome open and your Mac awake during work.
+1. Run `forgive-me` and confirm the correct X account is connected.
+2. Press **Enter**, then **y** to approve the 30-day rule for this pass.
+3. Leave Chrome open and signed in. Keep the Mac awake.
 
-1. Press `s` to collect the accounts you follow and your followers. Collection stops before activity checks.
-2. Press `f` to choose removal rules, then Enter to save. **REMOVE** rules identify candidates. **PROTECT** rules exclude accounts from removal.
-3. Press `i` to check activity from the top in handle order. The list shows the current check and follows each account. This checks all collected followers and clears the view filter. REVIEW means incomplete evidence; KEEP means a protection or recent activity.
-4. Press `m` to switch between all followers and removal candidates. This changes only the view.
-5. Press Enter for evidence, or `K` to keep an account.
-6. Press `a` to select checked candidates in the current view. Use **Shift+A** to select by basic rules before activity checks finish, or Space to select one.
-7. Press `d` to review the full queue, then `y` to approve. New queues run in handle order. Only accounts cleared by the activity step enter the queue. Removal uses those saved results and does not scan activity again. Identity and relationship protections are still checked.
-8. Press `b` to move the approved queue to the background. The current task finishes before handoff.
-
-Basic selection applies the verification and following rules plus the keep list and account protections. It does not require completed activity evidence. Selected accounts that still need activity clearance show **CHECK FIRST** and cannot enter the removal queue. It replaces the selection with matches in the current view.
-
-**Enter, `n`, or Esc cancels the removal confirmation.**
-
-### Default rules
-
-An account must meet all these conditions:
-
-- It follows you.
-- You do not follow it.
-- It is unverified, including blue verification.
-- It is public.
-- It is not on your keep list.
-- The activity step found complete inactivity for 90 days, zero current posts, or at most five posts with the newest observed activity at least 90 days old.
-
-The sparse + old rule can qualify an account with incomplete timeline coverage. It does not claim confirmed inactivity. Use `f` to adjust the post limit (0 disables this rule). Existing approved queues retain their original rules.
-
-The evidence panel shows the post-count percentile and log-scale z-score among collected followers with known counts (at least 30). A z-score of −2 or lower is marked LOW OUTLIER. These are review signals, not bot probabilities or independent removal rules. Numeric handles are only a weak signal.
-
-Activity results expire after 24 hours. If a queue reaches expired or missing evidence, it pauses for a new activity review; it never performs a hidden activity rescan. Activity that changes after the saved check may not be detected before removal.
-
-Post activity includes posts, replies, and reposts. Inactivity does not prove that an account is a bot.
-Zero current posts does not mean the account never posted.
-
-New installations use a minimum interval of 60 seconds and an hourly budget of 50 removal attempts. Existing saved settings are preserved. The full selected queue is approved at once; the hourly budget limits execution, not selection. Attempts that stop at identity or relationship checks count toward that local budget too.
-
-X reset times and Retry-After headers can extend the wait. Cooldowns and attempt budgets survive process restarts. A transient read or rate limit before dispatch keeps the target queued. Authentication failures and uncertain writes stop work. The app does not promise a fixed completion time or immunity from X restrictions.
-
-### System settings and Full Auto
-
-Press `,` to change the actual queue pace. Use ↑/↓ to choose a setting and ←/→ to change it. Enter or Esc saves. Settings apply to the active queue, Full Auto, and future work. They do not change the approved removal rules or shorten a cooldown already in progress.
-
-Press **Shift+R** in this panel for the recommended starting configuration: **60 seconds between removals, 20 attempts per batch, 5 minutes of rest, and 50 attempts per hour**. This is a local starting point, not an X quota or a guarantee against restrictions. Attempts count even when a pre-write check stops removal. Batch counts and rest deadlines survive restarts. X reset times and adaptive cooldowns can extend any wait.
-
-Press **Shift+F**, review the rules, then `y` to start Full Auto. It starts a fresh collection of accounts you follow and your full follower list, then checks accounts in list order. Each eligible result goes straight into the removal queue using its saved evidence. This keeps activity checks near removal even during a long run. It completes one pass, then stops.
-
-Full Auto always protects verified accounts, people you follow, keep exceptions, and recently observed activity. Its inactivity, zero-post, and sparse-account rules are fixed for the run. The statistical score remains a review signal. `p` pauses, `c` cancels, and `b` sends the run to the background. A restart restores progress in a paused state; resume with `p`. To change the removal rules, cancel Full Auto first. To adjust only pacing, use System Settings.
-
-### Background work
-
-After approval, press `b`. You can close the terminal after the handoff message. Run `forgive-me` again to open the background queue monitor. Closing that monitor leaves the queue running.
-
-```sh
-forgive-me status   # Current progress and wait time
-forgive-me pause    # Pause the background queue
-forgive-me resume   # Resume the same approved account and queue
-forgive-me stop     # Stop the worker; preserve the remaining queue
-```
-
-The monitor also has pause, resume, cancel, and stop controls. To return to the full follower view, stop the worker and reopen forgive-me. Resolve uncertain actions with `r` before resuming. After a process crash or computer restart, open forgive-me and review/resume saved work; automatic launch at login is not configured.
-
-Chrome must stay open and signed in to the approved account. The Mac must stay awake. No work runs while the computer is asleep. A normal Chrome reconnect can resume the same approved background queue; a manual pause, account change, or uncertain result prevents automatic continuation.
+There are no separate scan, activity, selection, or batch-approval steps in this flow.
+Checks happen shortly before removal. The queue uses the saved result; removal does not fetch activity timelines again.
+It does check your signed-in identity, verification, and following relationship before writing.
+Saved approvals do not expire halfway through the job. New posts after a saved check may not be detected.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
-| ↑ / ↓, `j` / `k`, mouse wheel | Move through the list or scroll help and details |
-| `s` | Collect or continue collecting followers |
-| `i` | Check collected followers from the top |
-| `/` | Search collected followers |
-| `m` | Switch between all followers and removal candidates |
-| Enter | Open account details |
-| Space | Select or deselect one account by basic rules |
-| `a` | Select checked removal candidates in the current view |
-| **Shift+A** | Select basic matches in this view; check activity before queueing |
-| `v` | Switch the running queue between list and animation |
-| `K` | Add or remove a keep exception |
-| `f` | Change the removal rules |
-| `d` | Review the full removal queue |
-| `b` | Move an approved queue or Full Auto to the background |
-| **Shift+F** | Review and start Full Auto on the entire follower list |
-| `,` | System settings: interval, batch amounts, rests, hourly limit |
-| `p` | Pause or continue work |
-| `c` | Cancel the remaining removals |
-| `r` | Resolve one uncertain result without another removal request |
-| `o` | Open the account's X profile |
-| **Shift+P** | Open the connection guide and pause work |
-| `?` | Open help |
-| `q` | Quit from the follower list or connection guide |
-| **Ctrl-C** | Pause and quit from any screen |
+| Enter on the start screen | Review and start cleanup |
+| Space in the worker view | Pause or resume |
+| `,` | Processing settings |
+| Enter in the worker view | Details |
+| `q` in the worker view | Close the view; keep working |
+| `c` | Cancel remaining work |
+| `x` | Stop the worker and save progress |
 
-The terminal keeps the header and controls in place. Lists scroll inside the app.
-The minimum window size is 52 columns by 12 rows.
+After a pass completes or is cancelled, Enter can approve another pass.
+Older approved queues retain their old rules and controls until finished or cancelled.
+`forgive-me --demo` retains the fictional inventory and pouring-animation preview.
 
-To try the interface with fictional accounts:
+## Processing settings
+
+Choose a field with ↑/↓ and change it with ←/→. Enter or Esc saves.
+Shift+R restores the recommended starting configuration:
+
+| Setting | Starting value |
+| --- | --- |
+| Removal interval | 60 seconds |
+| Attempts per batch | 20 |
+| Rest between batches | 5 minutes |
+| Hourly attempt limit | 50 |
+| Keep Mac awake | Off; enable when wanted |
+
+Settings apply to the current job without changing its removal rule.
+Active cooldowns finish first. X response limits can extend the wait.
+These are local defaults, not X quotas or a completion guarantee.
+Read requests in the new flow are spaced by at least one second; endpoint backoff can increase that interval.
+
+## Background work and recovery
+
+Progress, retry deadlines, batch rests, and removal receipts survive restarts.
+A normal Chrome reconnect resumes the same approved account. A manual pause stays paused.
+After restarting the Mac or worker, run `forgive-me` to restore the saved job. Automatic launch at login is not configured.
+No requests run while the Mac sleeps. The optional awake setting prevents idle sleep while the job runs; it does not guarantee operation with the lid closed.
+
+Unreadable accounts are retried after 1 minute, 15 minutes, and 6 hours. After four failures they remain set aside for a later pass.
+Other accounts continue. Uncertain removals are recorded, then checked through the follower relationship before that target can be retried.
+An absent follower closes the old attempt. A present follower can receive a bounded new attempt under the approved rule. Unresolved writes are never blindly repeated.
+Login failures, account changes, and access denials pause the job.
 
 ```sh
-forgive-me --demo
-```
-
-The removal queue shows the list and highlights the current account. Press `v` for a continuous stream pouring onto X. The water keeps moving during cooldowns; a floating REMOVED tag appears only after a confirmed removal. Pausing stops the water. The display runs at at most 20 frames per second and does not advance queue work.
-To disable the animation:
-
-```sh
-forgive-me --no-animation
+forgive-me status
+forgive-me pause
+forgive-me resume
+forgive-me stop
 ```
 
 ## Update
 
-1. Quit forgive-me.
-2. Run the install command again.
-3. Open `chrome://extensions`.
-4. Select **Reload** on forgive-me. Accept the native messaging permission if Chrome asks.
-5. Refresh your X tab.
-6. Start forgive-me in the terminal.
-7. Open the extension and select **Connect automatically**.
+Run the install command again, reload forgive-me in `chrome://extensions`, then restart the TUI.
+If an old background worker is running, first use `forgive-me stop` to save and stop it.
+The new workflow requires the matching extension with `simple_cleanup:1` support.
+Pairing, keep exceptions, and action history are preserved. Installation does not start cleanup.
 
-The update preserves your pairing settings, keep list, and action history.
+## Status
 
-## Limits and current status
-
-X can change its web interface or restrict requests. The app can stop when this occurs.
-A pause cannot stop a removal request that the extension has already sent.
-There is no action to restore removed followers. A removed account can follow a public account again.
-
-Version 0.1.11 passed automated, terminal, and installer tests.
-The user confirmed the preceding X connection fix after loading the updated extension. The new background workflow has automated coverage; it has not run a live overnight removal test.
-No real follower removal was used to test this release.
-See the [test record](docs/VERIFICATION.md).
+Version 0.2.0 introduces the single-rule background workflow.
+Automated checks use synthetic X responses and isolated local workers. No live removal or multi-day unattended run was used to test this release.
+A removed follower can follow a public account again. There is no restore-followers action.
 
 ## Reference
 
-- [Troubleshooting, data, and installation options](docs/GUIDE.md)
-- [Build instructions and internal design](docs/DEVELOPMENT.md)
-- [Browser protocol](protocol/README.md)
-- [Release history](https://github.com/altonwells/forgive-me/releases)
+- [Operation guide](docs/GUIDE.md)
+- [Verification record](docs/VERIFICATION.md)
+- [Development](docs/DEVELOPMENT.md)
+- [Protocol](protocol/README.md)
+- [Releases](https://github.com/altonwells/forgive-me/releases)
 
 [MIT license](LICENSE). [Third-party notices](THIRD_PARTY_NOTICES.md).

@@ -11,7 +11,7 @@ use forgive_me::{
     app::App,
     bridge::{self, BridgeEvent},
     config,
-    model::{Account, now_ms},
+    model::{Account, Policy, now_ms},
     protocol::{ClientMessage, Command, Work, WorkResult},
     store::Store,
     ui,
@@ -190,6 +190,26 @@ async fn main() -> Result<()> {
         .context("Local bridge port unavailable; use --port to choose another")?;
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
     let background = matches!(args.command, Some(CliCommand::Worker));
+    if !background && app.auto_policy.as_ref().is_some_and(|p| p.simple_cleanup) {
+        drop(listener);
+        drop(lock);
+        forgive_me::background::spawn(&dir)?;
+        for _ in 0..50 {
+            if forgive_me::background::request(&dir, forgive_me::background::Control::Status)
+                .await
+                .is_ok()
+            {
+                return monitor(&dir).await;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        anyhow::bail!("Worker could not resume. Run forgive-me doctor.");
+    }
+    if !background && app.auto_policy.is_none() && app.batch.is_none() {
+        let mut simple = Policy::cleanup();
+        simple.copy_pacing(&app.policy);
+        app.policy = simple;
+    }
     if !background {
         app.configure_setup(&config);
     }
@@ -213,9 +233,13 @@ async fn main() -> Result<()> {
     drop(lock);
     if result? {
         forgive_me::background::spawn(&dir)?;
-        println!(
-            "Approved queue moved to background. Keep Chrome open and your Mac awake.\nRun forgive-me to monitor; forgive-me pause or forgive-me stop to stop work."
-        );
+        for _ in 0..50 {
+            if dir.join("worker.sock").exists() {
+                return monitor(&dir).await;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        anyhow::bail!("Worker did not start. Progress is saved; reopen forgive-me.");
     }
     Ok(())
 }
@@ -332,6 +356,7 @@ fn demo_accounts() -> Vec<Account> {
             followers: Some(12 + i as u64),
             following_count: Some(1400),
             posts,
+            created_at_ms: Some(now - 365 * 86_400_000),
             verified,
             protected: Some(false),
             follows_me: Some(true),
@@ -428,11 +453,6 @@ async fn demo_worker(
 
 async fn monitor(dir: &Path) -> Result<()> {
     use forgive_me::background::{Control, request};
-    use forgive_me::theme::*;
-    use ratatui::{
-        text::{Line, Span},
-        widgets::{Block, Borders, Paragraph, Wrap},
-    };
     anyhow::ensure!(
         std::io::stdin().is_terminal() && stdout().is_terminal(),
         "Use forgive-me status for noninteractive output"
@@ -440,60 +460,59 @@ async fn monitor(dir: &Path) -> Result<()> {
     struct Restore;
     impl Drop for Restore {
         fn drop(&mut self) {
+            let _ = execute!(stdout(), DisableMouseCapture);
             ratatui::restore();
         }
     }
     let _restore = Restore;
     let mut terminal = ratatui::try_init()?;
+    execute!(stdout(), EnableMouseCapture)?;
+    terminal.clear()?;
     let mut keys = EventStream::new();
     let mut timer = tokio::time::interval(Duration::from_secs(1));
+    let mut settings: Option<(Policy, usize)> = None;
+    let mut details = false;
+    let mut confirm_start = false;
     loop {
         let state = request(dir, Control::Status).await?;
         terminal.draw(|frame| {
-            let area = frame.area();
-            let lines = vec![
-                Line::styled(" ◈ forgive-me / BACKGROUND QUEUE", bold(MINT)),
-                Line::from(format!(" @{}  ·  {}", state.handle, state.state)),
-                Line::from(""),
-                Line::from(format!(
-                    " {} remaining  ·  {} verified removals  ·  {} uncertain",
-                    state.remaining, state.removed, state.uncertain
-                )),
-                Line::from(format!(" Next task in {} seconds", state.wait_seconds)),
-                Line::from(""),
-                Line::from(state.message.clone()),
-                Line::from(""),
-                Line::styled(
-                    " Chrome must stay open. Your Mac must stay awake.",
-                    fg(MUTED),
-                ),
-                Line::from(" Closing this view leaves the approved queue running."),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled(" p ", bold(ICE)),
-                    Span::raw("pause   "),
-                    Span::styled(" r ", bold(ICE)),
-                    Span::raw("resume   "),
-                    Span::styled(" c ", bold(ICE)),
-                    Span::raw("cancel queue"),
-                ]),
-                Line::from(" x stop worker and save queue    q close monitor"),
-            ];
-            frame.render_widget(
-                Paragraph::new(lines)
-                    .block(Block::default().borders(Borders::ALL))
-                    .style(fg(TEXT).bg(BG))
-                    .wrap(Wrap { trim: false }),
-                area,
-            );
+            ui::render_worker(frame, &state, settings.as_ref(), details, confirm_start)
         })?;
         tokio::select! {
             _ = timer.tick() => {},
             event = keys.next() => if let Some(Ok(Event::Key(key))) = event {
                 if key.kind != KeyEventKind::Press { continue; }
-                let command = match key.code { KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char('p') => Some(Control::Pause), KeyCode::Char('r') => Some(Control::Resume),
-                    KeyCode::Char('c') => Some(Control::Cancel), KeyCode::Char('x') => Some(Control::Stop), _ => None };
+                if confirm_start {
+                    if key.code == KeyCode::Char('y') { request(dir, Control::Start).await?; confirm_start = false; }
+                    else if matches!(key.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('n')) { confirm_start = false; }
+                    continue;
+                }
+                if let Some((policy, row)) = &mut settings {
+                    match key.code {
+                        KeyCode::Up => *row = (*row + 4) % 5,
+                        KeyCode::Down => *row = (*row + 1) % 5,
+                        KeyCode::Left => policy.adjust_pacing(*row, -1),
+                        KeyCode::Right => policy.adjust_pacing(*row, 1),
+                        KeyCode::Char('R') => policy.copy_pacing(&Policy::default()),
+                        KeyCode::Enter | KeyCode::Esc | KeyCode::Char(',') => {
+                            request(dir, Control::Settings { policy: policy.clone() }).await?;
+                            settings = None;
+                        },
+                        _ => {},
+                    }
+                    continue;
+                }
+                let command = match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char(',') => { settings = Some((state.policy.clone(), 0)); None },
+                    KeyCode::Enter if state.state == "No queued work" => { confirm_start = true; None },
+                    KeyCode::Enter => { details = !details; None },
+                    KeyCode::Char(' ') | KeyCode::Char('p') => Some(if state.state == "Paused" { Control::Resume } else { Control::Pause }),
+                    KeyCode::Char('r') => Some(Control::Resume),
+                    KeyCode::Char('c') => Some(Control::Cancel),
+                    KeyCode::Char('x') => Some(Control::Stop),
+                    _ => None,
+                };
                 if let Some(command) = command { let stop = matches!(command, Control::Stop); request(dir, command).await?; if stop { break; } }
             } else if event.is_none() { break; },
         }

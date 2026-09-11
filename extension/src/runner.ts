@@ -58,12 +58,12 @@ export class Runner {
       ? { work: receipt.work, result: recoveryResult(receipt) }
       : null;
   }
-  async ack(id: string): Promise<void> {
+  async ack(id: string, durable = false): Promise<void> {
     const receipt = await this.journal.get();
     if (receipt && (receipt.work.command_id === id || receipt.ack_for === id)) {
       const result = recoveryResult(receipt);
-      // Uncertain receipts stay until an explicit read-only reconciliation resolves them.
-      if (result.kind === "action" && result.status === "uncertain") return;
+      // The paired controller may acknowledge durable ownership in SQLite; it must reconcile before retrying this target.
+      if (result.kind === "action" && result.status === "uncertain" && !durable) return;
       this.recentlyDone.add(id);
       await this.journal.set(null);
     }
@@ -190,7 +190,7 @@ export class Runner {
                 message:
                   record.state === "dispatched"
                     ? "Dispatch outcome uncertain; reconcile before continuing."
-                    : message,
+                    : `${error.code ?? "failure"}: ${message}`,
               };
           }
           await this.journal.set({ work, state: "finished", result });

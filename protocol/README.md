@@ -23,3 +23,16 @@ Reads can be repeated after interruption. A deferred receipt certifies that the 
 Durable queue support is advertised as durable_queue:1. The hello message can include extension_version so the UI can distinguish the browser build from the terminal build. The legacy policy field batch_limit now limits attempts in a rolling hour; it no longer truncates the approved selection. Cooldowns are persisted separately by owner in SQLite and by owner/endpoint in Chrome local storage.
 
 As of v0.1.10, saved_activity:1 advertises removal without an activity rescan. RemoveFollower carries approved_account: the persisted activity result for that target. The TUI approves only cleared accounts and sends the evidence with the frozen batch policy. Both sides require evidence no older than 24 hours. The browser rechecks identity and current relationship/verification/visibility protections, then removes without fetching posting timelines. Missing or expired evidence stops work for review. sparse_old_max_posts is optional (missing means disabled on old approved queues); future reviews default to 5. This rule accepts old observed activity plus a low post count without claiming complete coverage.
+
+
+## Single-rule jobs (v0.2.0)
+
+`simple_cleanup:1` advertises the 30-day rule and durable receipt handoff. New job policy has `simple_cleanup:true`, `inactive_days:30`, and both following/verification protections enabled. Old policies deserialize simple_cleanup as false and keep their existing behavior. No statistical or sparse-account override is used for new jobs. Account evidence can include created_at_ms; zero-post accounts need a known creation date at least 30 days before the check.
+
+Inspection uses one timestamp for checked_at_ms and the activity cutoff. Queue eligibility is checked when evidence arrives. At removal, simple jobs evaluate saved activity against that recorded timestamp, so approved work does not expire during a multi-day queue. Identity, relationship, verification and visibility are read again; activity timelines are not.
+
+For new jobs, an authenticated ack may include durable:true after the controller has committed the action outcome to SQLite. Chrome can then release its single receipt slot. SQLite remains authoritative for uncertain targets: a target with an unresolved action cannot be inspected or removed again until a read-only reconciliation closes that action. Other targets can proceed. Legacy acknowledgements retain the old Chrome receipt behavior.
+
+Retries are persisted per owner and target with attempts and due_ms. Inspection success does not reset a failed-removal retry budget. Confirmed absence or exclusion closes it. A confirmed-present result may schedule a new bounded attempt with a new command ID and the previously approved evidence; the unresolved command is never replayed. After four failures the target is set aside until a later approved pass.
+
+The worker owns the job from approval. The TUI sends fixed commands over a mode-0600 Unix socket. Processing-setting updates copy only pacing fields; they cannot weaken approved eligibility. managed:{owner} preserves explicit pause across process restarts. Normal same-owner Chrome reconnect may resume a running job; account switches and authentication failures stop it. Uncertain results are recovered without requiring a global manual reconciliation step.

@@ -244,3 +244,10 @@ test("a rate-limit error after dispatch remains uncertain and cannot be retried"
   await s.runner.ack(work().command_id);
   assert(s.journal.receipt);
 });
+
+test("explicit durable acknowledgement transfers uncertain recovery to the paired controller", async () => {
+  const s=setup();s.journal.receipt={work:work(),state:"dispatched"};
+  await s.runner.ack(work().command_id);assert(s.journal.receipt);
+  await s.runner.ack(work().command_id,true);assert.equal(s.journal.receipt,null);
+  await assert.rejects(s.runner.execute(work()),/replayed/);
+});

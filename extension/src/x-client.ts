@@ -35,6 +35,8 @@ export class XError extends Error {
 }
 type Templates = Partial<Record<Operation, Template>>;
 export class XClient {
+  private simpleMode = false;
+  private readNotBefore = 0;
   private limits: Record<string, LimitState> = {};
   private bearer: string | null = null;
   private templates: Templates = {};
@@ -281,6 +283,7 @@ export class XClient {
       "durable_queue:1",
       "sparse_policy:1",
       "saved_activity:1",
+      "simple_cleanup:1",
       "session",
       "inspect_account",
       "relationship",
@@ -311,6 +314,12 @@ export class XClient {
         `Waiting for ${path.split("/").pop()} request budget.`,
         limit.until,
       );
+    if (!body && this.simpleMode) {
+      const wait = Math.max(0, this.readNotBefore - Date.now());
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.assertRead(epoch);
+      this.readNotBefore = Date.now() + 1000 * Math.min(30, 2 ** (limit?.failures ?? 0));
+    }
     const csrf = await chrome.cookies.get({
       url: "https://x.com/",
       name: "ct0",
@@ -527,6 +536,7 @@ export class XClient {
     return { kind: "page", list, ...page };
   }
   async inspect(owner: string, id: string, policy: Policy): Promise<Account> {
+    this.simpleMode = policy.simple_cleanup === true;
     const epoch = this.readEpoch;
     await this.assertOwner(owner);
     this.assertRead(epoch);
@@ -551,7 +561,7 @@ export class XClient {
       account.activity_note = "Fresh profile reports zero current posts.";
       return account;
     }
-    const cutoff = Date.now() - policy.inactive_days * 86_400_000;
+    const cutoff = account.checked_at_ms - policy.inactive_days * 86_400_000;
     const modern = [
       "UserOriginalsTimeline",
       "UserRepliesTimeline",
@@ -562,20 +572,32 @@ export class XClient {
       const evidence = [];
       for (const op of modern) {
         this.assertRead(epoch);
-        const raw = await this.graphql(op, {
-          userId: id,
-          cursor: undefined,
-          count: 40,
-          includePromotedContent: false,
-          withCommunity: true,
-          withVoice: true,
-        });
-        const part = postingEvidence(
-          raw,
-          id,
-          cutoff,
-          op === "UserRepostsTimeline",
-        );
+        let cursor: string | undefined;
+        const seen = new Set<string>();
+        let latest: number | null = null;
+        let blocked = false;
+        let part: ReturnType<typeof postingEvidence> = { latest: null, coverage: null, note: "Activity unavailable" };
+        for (let page = 0; page < 4; page++) {
+          let raw;
+          try { raw = await this.graphql(op, {
+            userId: id, cursor, count: 40, includePromotedContent: false,
+            withCommunity: true, withVoice: true,
+          }); } catch (error) {
+            if (!(error instanceof XError) || !["http_404", "operation_unavailable"].includes(error.code)) throw error;
+            blocked = true;
+            break;
+          }
+          this.assertRead(epoch);
+          part = postingEvidence(raw, id, cutoff, op === "UserRepostsTimeline");
+          blocked ||= part.blocked === true;
+          if (part.latest !== null) latest = Math.max(latest ?? 0, part.latest);
+          if (latest !== null && latest > cutoff) break;
+          if (part.coverage !== null && !blocked) break;
+          if (!part.cursor || seen.has(part.cursor)) break;
+          seen.add(part.cursor);
+          cursor = part.cursor;
+        }
+        part = { ...part, latest, coverage: latest !== null && latest > cutoff ? cutoff : blocked ? null : part.coverage };
         evidence.push({
           ...part,
           channel: op.replace("User", "").replace("Timeline", ""),
@@ -624,6 +646,17 @@ export class XClient {
         "Activity operations are missing. Open a profile's Posts, Replies and Reposts tabs on X, refresh discovery, then retry.",
       );
     }
+    if (modern.every((op) => this.templates[op]) && account.coverage_since_ms === null && this.templates.UserTweetsAndReplies) {
+      this.assertRead(epoch);
+      const raw = await this.graphql("UserTweetsAndReplies", {
+        userId: id, count: 40, includePromotedContent: false, withCommunity: true, withVoice: true,
+      });
+      this.assertRead(epoch);
+      const fallback = postingEvidence(raw, id, cutoff);
+      if (fallback.latest !== null) account.last_activity_ms = Math.max(account.last_activity_ms ?? 0, fallback.latest);
+      account.coverage_since_ms = fallback.coverage;
+      account.activity_note = fallback.coverage !== null ? fallback.note : "Activity unavailable; will retry automatically.";
+    }
     await this.assertOwner(owner);
     this.assertRead(epoch);
     return account;
@@ -636,7 +669,8 @@ export class XClient {
     beforeWrite: () => Promise<void>,
     approved?: Account,
   ): Promise<Result> {
-    if (!approved || approved.id !== id || !eligible(approved, policy))
+    this.simpleMode = policy.simple_cleanup === true;
+    if (!approved || approved.id !== id || !eligible(approved, policy, Date.now(), true))
       throw new XError(
         "activity_review_required",
         "Saved activity is missing, expired or not eligible. Check activity in the TUI and approve a new queue.",
@@ -664,6 +698,8 @@ export class XClient {
           protected: account.protected,
         },
         policy,
+        Date.now(),
+        true,
       )
     )
       return {

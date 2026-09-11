@@ -138,6 +138,10 @@
         "command_id": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "durable": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
@@ -260,6 +264,24 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 500
+        },
+        "simple_cleanup": {
+          "type": "boolean",
+          "default": false
+        },
+        "keep_awake": {
+          "type": "boolean",
+          "default": false
+        },
+        "rest_every": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rest_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
         }
       },
       "required": [
@@ -356,6 +378,12 @@
         },
         "kept": {
           "type": "boolean"
+        },
+        "created_at_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
