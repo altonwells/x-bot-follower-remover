@@ -66,7 +66,7 @@ impl Account {
             && (!p.skip_following || self.i_follow != Some(true))
     }
 
-    pub fn reason(&self, p: &Policy, now: i64) -> Result<&'static str, &'static str> {
+    pub fn basic_reason(&self, p: &Policy) -> Result<(), &'static str> {
         if self.kept {
             return Err("Kept");
         }
@@ -90,6 +90,11 @@ impl Account {
         if self.protected != Some(false) {
             return Err("Protected / visibility unknown");
         }
+        Ok(())
+    }
+
+    pub fn reason(&self, p: &Policy, now: i64) -> Result<&'static str, &'static str> {
+        self.basic_reason(p)?;
         let Some(checked) = self.checked_at_ms else {
             return Err("Needs activity check");
         };

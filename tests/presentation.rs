@@ -76,6 +76,7 @@ fn unknown_evidence_is_explicit_and_search_empty_is_distinct() {
 #[test]
 fn ritual_is_still_when_paused_and_reports_real_count_even_when_small() {
     let mut app = app();
+    app.show_queue_list = false;
     app.batch = Some(Batch {
         id: "demo".into(),
         ids: VecDeque::new(),
@@ -128,4 +129,48 @@ fn removal_rules_and_workflow_name_direction_and_next_action() {
     assert!(text.contains("PROTECT: verified accounts"));
     assert!(text.contains("REMOVE: zero posts too"));
     assert!(text.contains("Hourly attempt budget"));
+}
+
+#[tokio::test]
+async fn selected_unchecked_accounts_and_active_work_are_visible_in_the_queue_list() {
+    use forgive_me::protocol::{Command, Work};
+    let mut app = app();
+    app.accounts.insert(
+        "1".into(),
+        Account {
+            id: "1".into(),
+            handle: "checking_me".into(),
+            follows_me: Some(true),
+            i_follow: Some(false),
+            verified: Some(false),
+            protected: Some(false),
+            ..Default::default()
+        },
+    );
+    app.selected.insert("1".into());
+    let text = screen(&mut app, 140, 42, 0);
+    assert!(text.contains("CHECK FIRST"));
+    assert!(!text.contains("PROTECTED FROM REMOVAL"));
+    app.batch = Some(Batch {
+        id: "b".into(),
+        ids: VecDeque::from(["1".into()]),
+        policy: app.policy.clone(),
+    });
+    app.pending = Some(Work {
+        command_id: "w".into(),
+        owner_id: app.owner.clone(),
+        command: Command::InspectAccount {
+            target_id: "1".into(),
+            policy: app.policy.clone(),
+        },
+    });
+    let text = screen(&mut app, 140, 42, 0);
+    assert!(text.contains("▶"));
+    assert!(text.contains("Checking activity"));
+    assert!(text.contains("Working…"));
+    assert!(text.contains("list / animation"));
+    app.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE))
+        .await
+        .unwrap();
+    assert!(screen(&mut app, 140, 42, 0).contains("Reseting followers"));
 }

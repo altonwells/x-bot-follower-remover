@@ -105,12 +105,14 @@ Keep Chrome open and your Mac awake during work.
 
 1. Press `s` to collect the accounts you follow and your followers. Collection stops before activity checks.
 2. Press `f` to choose removal rules, then Enter to save. **REMOVE** rules identify candidates. **PROTECT** rules exclude accounts from removal.
-3. Press `i` to check activity. Unknown evidence stays protected.
+3. Press `i` to check activity from the top in handle order. The list shows the current check and follows each account. This checks all collected followers and clears the view filter. Unknown evidence stays protected.
 4. Press `m` to switch between all followers and removal candidates. This changes only the view.
 5. Press Enter for evidence, or `K` to keep an account.
-6. Press `a` to select candidates in the current view, or Space to select one.
-7. Press `d` to review the full queue, then `y` to approve removal.
+6. Press `a` to select checked candidates in the current view. Use **Shift+A** to select by basic rules before activity checks finish, or Space to select one.
+7. Press `d` to review the full queue, then `y` to approve. New queues run in handle order. Each account must pass all rules, including a fresh activity check, before removal. Others are skipped.
 8. Press `b` to move the approved queue to the background. The current task finishes before handoff.
+
+Basic selection applies the verification and following rules plus the keep list and account protections. It does not require completed activity evidence. Selected accounts that need to pass activity rules show **CHECK FIRST**. It replaces the selection with matches in the current view.
 
 **Enter, `n`, or Esc cancels the removal confirmation.**
 
@@ -153,12 +155,14 @@ Chrome must stay open and signed in to the approved account. The Mac must stay a
 | --- | --- |
 | ↑ / ↓, `j` / `k`, mouse wheel | Move through the list or scroll help and details |
 | `s` | Collect or continue collecting followers |
-| `i` | Check activity after collection |
+| `i` | Check collected followers from the top |
 | `/` | Search collected followers |
 | `m` | Switch between all followers and removal candidates |
 | Enter | Open account details |
-| Space | Select or deselect one eligible account |
-| `a` | Select removal candidates in the current view |
+| Space | Select or deselect one account by basic rules |
+| `a` | Select checked removal candidates in the current view |
+| **Shift+A** | Select basic matches in this view; check activity before removal |
+| `v` | Switch the running queue between list and animation |
 | `K` | Add or remove a keep exception |
 | `f` | Change the removal rules |
 | `d` | Review the full removal queue |
@@ -181,7 +185,7 @@ To try the interface with fictional accounts:
 forgive-me --demo
 ```
 
-The removal screen shows an animation and the confirmed removal count.
+The removal queue shows the list and highlights the current account. Press `v` to show the pouring animation and confirmed removal count.
 To disable the animation:
 
 ```sh
@@ -206,7 +210,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.8 passed automated, terminal, and installer tests.
+Version 0.1.9 passed automated, terminal, and installer tests.
 The user confirmed the preceding X connection fix after loading the updated extension. The new background workflow has automated coverage; it has not run a live overnight removal test.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).

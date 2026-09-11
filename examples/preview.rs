@@ -4,6 +4,7 @@ use forgive_me::{
     app::{App, Batch, Mode},
     config::Config,
     model::{Account, now_ms},
+    protocol::{Command, Work},
     setup::Step,
     store::Store,
     ui,
@@ -123,6 +124,18 @@ fn main() {
     app.paused = false;
     app.removed = 27;
     app.notice = "Removal batch approved. p pauses; c cancels remaining work.".into();
+    app.pending = Some(Work {
+        command_id: "preview-work".into(),
+        owner_id: app.owner.clone(),
+        command: Command::RemoveFollower {
+            target_id: "5".into(),
+            batch_id: "preview".into(),
+            policy: app.policy.clone(),
+            deadline_ms: now + 120_000,
+        },
+    });
+    scenes.push(capture(&mut app, "queue-list", 140, 42));
+    app.show_queue_list = false;
     scenes.push(capture(&mut app, "cleanse", 140, 42));
     app.configure_setup(&Config::default());
     app.mode = Mode::Setup;

@@ -1,12 +1,10 @@
-forgive-me v0.1.8 makes follower cleanup a clear four-step workflow and adds background queues.
+forgive-me v0.1.9 shows work in list order and adds selection by basic rules.
 
-- s collects followers; i checks activity; f defines removal candidates and protections; a selects candidates and d reviews the full queue.
-- The view and evidence panels state REMOVE or KEEP. Unknown evidence remains protected.
-- The full approved selection stays queued. A local hourly attempt budget controls execution rather than truncating the selection.
-- Endpoint cooldowns honor X reset and Retry-After headers, persist across Chrome worker restarts, and back off after repeated rate limits. Read failures and pre-dispatch deferrals preserve work; uncertain writes stop and never replay automatically.
-- b hands the approved queue to a detached controller after the active task finishes. Reopen forgive-me for a monitor, or use status, pause, resume, and stop commands.
-- Setup reports the Chrome extension version independently of the terminal version.
+- Activity checks start at the top in handle order. The highlight follows the account being checked, with a visible work marker and action label.
+- New removal queues use the same order and keep the list visible. Press v to switch to the pouring animation.
+- Shift+A selects accounts in the current view by basic verification, following, and protection rules. Activity need not be checked yet. Lowercase a selects only checked removal candidates.
+- Selected accounts that still need to pass activity rules show CHECK FIRST. The approval screen states that only accounts that pass all rules will be removed. Each queued account gets a fresh activity check before removal.
 
-Quit and reopen the terminal app, Reload the installed extension in chrome://extensions, and refresh X. Existing settings, pairing, keep list, and action receipts are preserved. Chrome must remain open and the Mac awake for background execution. Automatic launch after a reboot is not configured.
+Restart forgive-me to use the new controls. Reload the extension in chrome://extensions to show the matching version. Pairing, settings, keep choices, and saved queues are preserved. Existing queues retain their saved order.
 
-The background behavior is tested with local simulated Chrome connections. No live followers were removed and no overnight live run is claimed.
+No live followers were removed during verification.

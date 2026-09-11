@@ -162,3 +162,15 @@ Checks: full Rust suite exited 0 (44 tests); extension TypeScript check and 59 t
 These checks do not constitute a live overnight removal run. No real followers were removed during development.
 
 The packaged-process smoke test passed after granting local socket access (Ran 1 test, OK). It verified status, pause, stop, and socket cleanup in a separate process with no X connection.
+
+## Ordered activity checks and basic selection (v0.1.9)
+
+Activity dispatch, the inventory, and new queue approvals use the same case-insensitive handle order with an ID tie-breaker. Starting activity checks clears search and candidate-only view so the target remains visible. Focus follows dispatched work; pending command state supplies the row marker and action label. The list stays visible during a queue, with v switching to the existing animation.
+
+Shift+A selects current-view accounts that pass the shared basic protection checks without requiring completed activity evidence. Lowercase a retains fully checked eligibility. The browser's fresh inspect/eligible gate before removal is unchanged. Confirmation now explicitly approves conditional removals; selected accounts with insufficient activity evidence show CHECK FIRST.
+
+New controller regressions use account IDs in the opposite order from handles, verify the first and second dispatch plus focus movement, and cover basic selection before activity, view scope, protections, approval order, and first removal dispatch. Presentation tests cover active work, CHECK FIRST, list/animation switching, and warnings/default cancel at 52×12. Offscreen fictional queue and minimum confirmation previews were rendered and inspected.
+
+Checks exited 0: cargo test --offline --locked (47 Rust tests); npm run check and npm test (59 extension tests); cargo clippy --offline --all-targets -- -D warnings; release build/package; installer suite (7), release terminal suite (1), and packaged background CLI suite (1). Socket-dependent tests failed under sandbox restrictions, then passed with local socket permission. Total: 115 tests. No live followers were removed.
+
+Simplify's independent reuse, quality, and efficiency passes found no worthwhile simplification. No cleanup edits or skipped actionable findings; cleanup net line delta 0. The focused baseline (controller, presentation, policy contract: 22 tests) and final full-suite coverage passed unchanged, exit 0.

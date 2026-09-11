@@ -303,3 +303,114 @@ fn rolling_hourly_budget_and_server_cooldown_survive_serialization() {
     assert_eq!(restored.attempts.len(), 1);
     assert!(restored.until_ms >= until);
 }
+
+#[tokio::test]
+async fn activity_checks_follow_display_order_and_focus_the_active_account() {
+    use forgive_me::protocol::{ClientMessage, WorkResult};
+    let mut app = fixture();
+    let zulu = app.accounts.get_mut("2").unwrap();
+    zulu.handle = "zulu".into();
+    zulu.checked_at_ms = None;
+    let mut alpha = zulu.clone();
+    alpha.id = "99".into();
+    alpha.handle = "Alpha".into();
+    app.accounts.insert(alpha.id.clone(), alpha);
+    app.scan.adapter_revision = 2;
+    app.scan.phase = "review".into();
+    app.query = "zulu".into();
+    app.only_matching = true;
+    let (tx, mut rx) = mpsc::channel(8);
+    app.sender = Some(tx);
+    app.key(key('i')).await.unwrap();
+    assert!(app.query.is_empty());
+    assert!(!app.only_matching);
+    assert_eq!(rx.recv().await.unwrap()["type"], "resume");
+    for (id, focus) in [("99", 0), ("2", 1)] {
+        app.next_at = std::time::Instant::now();
+        app.pacing.until_ms = 0;
+        app.tick().await.unwrap();
+        let message = rx.recv().await.unwrap();
+        assert_eq!(message["work"]["command"]["kind"], "inspect_account");
+        assert_eq!(message["work"]["command"]["target_id"], id);
+        assert_eq!(app.focus, focus);
+        assert_eq!(app.active_target(), Some((id, "Checking activity")));
+        let mut account = app.accounts[id].clone();
+        account.checked_at_ms = Some(now_ms());
+        app.bridge_event(BridgeEvent::Message(ClientMessage::Result {
+            session_id: "s".into(),
+            command_id: app.pending.as_ref().unwrap().command_id.clone(),
+            result: WorkResult::Account { account },
+        }))
+        .await
+        .unwrap();
+        assert!(app.active_target().is_none());
+        assert_eq!(rx.recv().await.unwrap()["type"], "ack");
+    }
+    app.next_at = std::time::Instant::now();
+    app.pacing.until_ms = 0;
+    app.tick().await.unwrap();
+    assert_eq!(app.scan.phase, "done");
+}
+
+#[tokio::test]
+async fn basic_selection_queues_unchecked_accounts_in_display_order_and_preserves_protections() {
+    let mut app = fixture();
+    let base = app.accounts.get_mut("2").unwrap();
+    base.handle = "zulu".into();
+    base.checked_at_ms = None;
+    let base = base.clone();
+    for (id, handle) in [
+        ("99", "alpha"),
+        ("3", "verified"),
+        ("4", "mutual"),
+        ("5", "unknown"),
+        ("6", "kept"),
+        ("7", "private"),
+    ] {
+        let mut account = base.clone();
+        account.id = id.into();
+        account.handle = handle.into();
+        match id {
+            "3" => account.verified = Some(true),
+            "4" => account.i_follow = Some(true),
+            "5" => account.verified = None,
+            "6" => account.kept = true,
+            "7" => account.protected = Some(true),
+            _ => {}
+        }
+        app.accounts.insert(id.into(), account);
+    }
+    app.key(key('a')).await.unwrap();
+    assert!(app.selected.is_empty());
+    app.query = "alpha".into();
+    app.key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT))
+        .await
+        .unwrap();
+    assert_eq!(app.selected.len(), 1);
+    assert!(app.selected.contains("99"));
+    app.query.clear();
+    app.key(key('A')).await.unwrap();
+    assert_eq!(app.selected.len(), 2);
+    assert!(
+        app.selected
+            .iter()
+            .all(|id| app.accounts[id].reason(&app.policy, now_ms()).is_err())
+    );
+    app.key(key('d')).await.unwrap();
+    assert_eq!(app.confirmation, vec!["99", "2"]);
+    app.key(key('y')).await.unwrap();
+    assert_eq!(
+        app.batch.as_ref().unwrap().ids,
+        VecDeque::from(["99".to_string(), "2".to_string()])
+    );
+    assert!(app.show_queue_list);
+    let (tx, mut rx) = mpsc::channel(8);
+    app.sender = Some(tx);
+    app.tick().await.unwrap();
+    assert_eq!(
+        rx.recv().await.unwrap()["work"]["command"]["target_id"],
+        "99"
+    );
+    assert_eq!(app.focused().as_deref(), Some("99"));
+    assert_eq!(app.active_target(), Some(("99", "Check / remove")));
+}

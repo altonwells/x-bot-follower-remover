@@ -13,7 +13,7 @@ use ratatui::{
 };
 
 pub fn visible(app: &App) -> bool {
-    app.batch.is_some() && app.mode == Mode::Browse
+    app.batch.is_some() && !app.show_queue_list && app.mode == Mode::Browse
 }
 pub fn animating(app: &App) -> bool {
     visible(app)

@@ -70,6 +70,7 @@ pub struct App {
     pub uncertain: usize,
     pub demo: bool,
     pub only_matching: bool,
+    pub show_queue_list: bool,
     pub pacing: crate::pacing::Pacing,
     pub detach_requested: bool,
 }
@@ -115,6 +116,7 @@ impl App {
             uncertain,
             demo,
             only_matching: false,
+            show_queue_list: true,
             pacing,
             detach_requested: false,
         })
@@ -126,22 +128,45 @@ impl App {
             self.log("Welcome. Let's connect your Chrome extension.");
         }
     }
-    pub fn visible(&self) -> Vec<&Account> {
-        let q = self.query.to_lowercase();
-        let now = now_ms();
+    pub fn ordered_followers(&self) -> Vec<&Account> {
         let mut accounts: Vec<_> = self
             .accounts
             .values()
             .filter(|a| a.follows_me == Some(true))
+            .collect();
+        accounts.sort_by_cached_key(|a| (a.handle.to_lowercase(), &a.id));
+        accounts
+    }
+    pub fn visible(&self) -> Vec<&Account> {
+        let q = self.query.to_lowercase();
+        let now = now_ms();
+        self.ordered_followers()
+            .into_iter()
             .filter(|a| {
                 q.is_empty()
                     || a.handle.to_lowercase().contains(&q)
                     || a.name.to_lowercase().contains(&q)
             })
             .filter(|a| !self.only_matching || a.reason(&self.policy, now).is_ok())
-            .collect();
-        accounts.sort_by_cached_key(|a| (a.handle.to_lowercase(), &a.id));
-        accounts
+            .collect()
+    }
+    pub fn active_target(&self) -> Option<(&str, &str)> {
+        match &self.pending.as_ref()?.command {
+            Command::InspectAccount { target_id, .. } => Some((target_id, "Checking activity")),
+            Command::RemoveFollower { target_id, .. } => Some((target_id, "Check / remove")),
+            _ => None,
+        }
+    }
+    fn follow_target(&mut self, id: &str, action: &str) {
+        if let Some(position) = self.visible().iter().position(|a| a.id == id) {
+            self.focus = position;
+        }
+        if let Some(account) = self.accounts.get(id) {
+            self.log(format!(
+                "{action}: @{}. The highlight follows each account from the top.",
+                account.handle
+            ));
+        }
     }
     pub fn focused(&self) -> Option<String> {
         let rows = self.visible();
@@ -308,7 +333,7 @@ impl App {
                             .filter(|id| {
                                 self.accounts
                                     .get(*id)
-                                    .is_some_and(|a| a.reason(&self.policy, now_ms()).is_ok())
+                                    .is_some_and(|a| a.basic_reason(&self.policy).is_ok())
                             })
                             .cloned()
                             .collect();
@@ -318,6 +343,9 @@ impl App {
                                 ids,
                                 policy: self.policy.clone(),
                             });
+                            self.query.clear();
+                            self.only_matching = false;
+                            self.show_queue_list = true;
                             self.save_batch().await?;
                             self.send_control("resume").await?;
                             self.paused = false;
@@ -421,12 +449,15 @@ impl App {
                 {
                     bail!("Finish collecting followers first (s), then press i to check activity");
                 }
+                self.query.clear();
+                self.only_matching = false;
+                self.focus = 0;
                 self.scan.phase = "inspect".into();
                 self.scan.started_at = now_ms();
                 self.save_scan().await?;
                 self.send_control("resume").await?;
                 self.paused = false;
-                self.log("Checking activity. Protected accounts are skipped; unknown evidence never qualifies for removal.");
+                self.log("Checking collected followers from the top in displayed order. Protected accounts are skipped; the highlight follows the current check.");
             }
             KeyCode::Char('b') => {
                 if self.demo {
@@ -445,10 +476,11 @@ impl App {
             }
             KeyCode::Char(' ') => {
                 if let Some(id) = self.focused() {
-                    if self.accounts[&id].reason(&self.policy, now_ms()).is_ok() {
-                        if !self.selected.remove(&id) {
-                            self.selected.insert(id);
-                        }
+                    if self.selected.remove(&id) {
+                        return Ok(());
+                    }
+                    if self.accounts[&id].basic_reason(&self.policy).is_ok() {
+                        self.selected.insert(id);
                     } else {
                         self.log("Protected from removal: inspect the decision column or press Enter for the reason.");
                     }
@@ -462,6 +494,16 @@ impl App {
                     .map(|a| a.id.clone())
                     .collect();
             }
+            KeyCode::Char('A') => {
+                self.selected = self
+                    .visible()
+                    .into_iter()
+                    .filter(|a| a.basic_reason(&self.policy).is_ok())
+                    .map(|a| a.id.clone())
+                    .collect();
+                self.log(format!("{} selected by basic rules in this view. Activity will be checked before removal; accounts that fail are skipped.", self.selected.len()));
+            }
+            KeyCode::Char('v') => self.show_queue_list = !self.show_queue_list,
             KeyCode::Char('K') => {
                 if let Some(id) = self.focused() {
                     if self.pending.as_ref().is_some_and(|w| matches!(&w.command, Command::RemoveFollower { target_id, .. } if target_id == &id)) { self.pause().await?; }
@@ -484,17 +526,15 @@ impl App {
                     );
                 }
                 self.confirmation = self
-                    .selected
-                    .iter()
-                    .filter(|id| {
-                        self.accounts
-                            .get(*id)
-                            .is_some_and(|a| a.reason(&self.policy, now_ms()).is_ok())
+                    .ordered_followers()
+                    .into_iter()
+                    .filter(|a| {
+                        self.selected.contains(&a.id) && a.basic_reason(&self.policy).is_ok()
                     })
-                    .cloned()
+                    .map(|a| a.id.clone())
                     .collect();
                 if self.confirmation.is_empty() {
-                    bail!("Select eligible accounts first");
+                    bail!("Select checked candidates with a, or basic-rule matches with Shift+A");
                 }
                 self.paused = true;
                 self.mode = Mode::Confirm;
@@ -695,11 +735,12 @@ impl App {
             }
             if let Some(target_id) = batch.ids.front().cloned() {
                 let command = Command::RemoveFollower {
-                    target_id,
+                    target_id: target_id.clone(),
                     batch_id: batch.id.clone(),
                     policy: batch.policy.clone(),
                     deadline_ms: now_ms() + 120_000,
                 };
+                self.follow_target(&target_id, "Checking before removal");
                 self.submit(command).await?;
             } else {
                 self.batch = None;
@@ -719,14 +760,15 @@ impl App {
             }
             "inspect" => {
                 let id = self
-                    .accounts
-                    .values()
+                    .ordered_followers()
+                    .into_iter()
                     .find(|a| {
                         a.basic_candidate(&self.policy)
                             && a.checked_at_ms.unwrap_or(0) < self.scan.started_at
                     })
                     .map(|a| a.id.clone());
                 if let Some(target_id) = id {
+                    self.follow_target(&target_id, "Checking activity");
                     self.submit(Command::InspectAccount {
                         target_id,
                         policy: self.policy.clone(),

@@ -16,17 +16,22 @@ use ratatui::{
 pub const HELP: &[(&str, &str)] = &[
     ("↑ ↓ / j k / PgUp PgDn", "Navigate"),
     ("s", "1. Collect followers (no activity check)"),
-    ("i", "2. Check activity of collected followers"),
+    ("i", "2. Check activity from the top of the list"),
     ("f", "Removal rules: choose candidates and protections"),
     ("/", "Search"),
     ("m", "View candidates for removal / all followers"),
-    ("Space", "Toggle eligible account"),
-    ("a", "3. Select removal candidates in this view"),
+    ("Space", "Select / deselect by basic rules"),
+    ("a", "Select checked removal candidates in this view"),
+    (
+        "Shift+A",
+        "Select basic matches; check activity before removal",
+    ),
     ("K", "Keep / unkeep"),
     ("Enter", "Account details"),
     ("o", "Open X profile"),
     ("d", "4. Review and approve bulk removal"),
     ("b", "Run approved queue in background"),
+    ("v", "Queue: switch list / pouring animation"),
     ("p", "Pause / resume"),
     ("c", "Cancel pending removals"),
     ("r", "Reconcile one uncertain action"),
@@ -317,7 +322,7 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
         } else {
             (
                 "A little room for a fresh start",
-                "Press s to scan your followers and activity.",
+                "Press s to collect followers, then i to check activity.",
             )
         };
         let height = if inner.height >= 5 { 5 } else { 2 };
@@ -345,14 +350,22 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
         .enumerate()
         .map(|(i, a)| {
             let decision = a.reason(&app.policy, now);
-            let color = if a.kept {
+            let active = app.active_target().filter(|(id, _)| *id == a.id);
+            let check_first = app.selected.contains(&a.id)
+                && a.basic_reason(&app.policy).is_ok()
+                && decision.is_err();
+            let color = if active.is_some() {
+                ICE
+            } else if a.kept {
                 MUTED
             } else if decision.is_ok() {
                 MINT
             } else {
                 TEXT
             };
-            let mark = if a.kept {
+            let mark = if active.is_some() {
+                "▶"
+            } else if a.kept {
                 "◆"
             } else if app.selected.contains(&a.id) {
                 "✓"
@@ -360,13 +373,20 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
                 "·"
             };
             let mut cells = vec![
-                Cell::from(mark).style(fg(if app.selected.contains(&a.id) {
+                Cell::from(mark).style(fg(if active.is_some() {
+                    ICE
+                } else if app.selected.contains(&a.id) {
                     MINT
                 } else {
                     MUTED
                 })),
                 Cell::from(format!("@{}", clean(&a.handle))).style(fg(color)),
-                Cell::from(activity(a, now)).style(fg(MUTED)),
+                Cell::from(if active.is_some() {
+                    "Working…".into()
+                } else {
+                    activity(a, now)
+                })
+                .style(fg(if active.is_some() { ICE } else { MUTED })),
             ];
             if full {
                 cells.push(
@@ -379,12 +399,30 @@ fn render_inventory(frame: &mut Frame, app: &App, area: Rect, accounts: &[&Accou
                 );
             }
             cells.push(
-                Cell::from(format!(
-                    "{}: {}",
-                    if decision.is_ok() { "REMOVE" } else { "KEEP" },
-                    decision.unwrap_or_else(|s| s)
-                ))
-                .style(fg(if decision.is_ok() { MINT } else { MUTED })),
+                Cell::from(if let Some((_, action)) = active {
+                    action.to_string()
+                } else {
+                    format!(
+                        "{}: {}",
+                        if check_first {
+                            "CHECK FIRST"
+                        } else if decision.is_ok() {
+                            "REMOVE"
+                        } else {
+                            "KEEP"
+                        },
+                        decision.unwrap_or_else(|s| s)
+                    )
+                })
+                .style(fg(if active.is_some() {
+                    ICE
+                } else if check_first {
+                    AMBER
+                } else if decision.is_ok() {
+                    MINT
+                } else {
+                    MUTED
+                })),
             );
             Row::new(cells).height(row_height).style(fg(TEXT).bg(
                 if (offset + i).is_multiple_of(2) {
@@ -455,7 +493,14 @@ fn render_evidence(frame: &mut Frame, app: &App, area: Rect, account: Option<&Ac
             Line::styled(format!("@{}", clean(&a.handle)), bold(ICE)),
             Line::styled(clean(&a.name), fg(MUTED)),
             Line::styled(
-                if decision.is_ok() {
+                if let Some((_, action)) = app.active_target().filter(|(id, _)| *id == a.id) {
+                    action
+                } else if app.selected.contains(&a.id)
+                    && a.basic_reason(&app.policy).is_ok()
+                    && decision.is_err()
+                {
+                    "✓ SELECTED / CHECK FIRST"
+                } else if decision.is_ok() {
                     "✓ REMOVAL CANDIDATE"
                 } else {
                     "— PROTECTED FROM REMOVAL"
@@ -527,7 +572,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false }),
         notice,
     );
-    let lines = if crate::ritual::visible(app) {
+    let lines = if app.batch.is_some() && app.mode == Mode::Browse {
         vec![
             theme::keys(&[
                 ("p", "pause / resume"),
@@ -535,7 +580,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
                 ("b", "background"),
                 ("q", "pause & quit"),
             ]),
-            theme::keys(&[("Enter", "details"), ("?", "help")]),
+            theme::keys(&[
+                ("v", "list / animation"),
+                ("Enter", "details"),
+                ("?", "help"),
+            ]),
         ]
     } else if app.mode == Mode::Search {
         vec![
@@ -544,7 +593,12 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ]
     } else if area.width < 90 {
         vec![
-            theme::keys(&[("s", "collect"), ("i", "activity"), ("d", "remove")]),
+            theme::keys(&[
+                ("s", "collect"),
+                ("i", "activity"),
+                ("A", "basic select"),
+                ("d", "review"),
+            ]),
             theme::keys(&[
                 ("f", "filters"),
                 ("p", "pause"),
@@ -559,7 +613,8 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
                 ("i", "activity"),
                 ("f", "rules"),
                 ("Space", "select"),
-                ("a", "select candidates"),
+                ("a", "checked"),
+                ("A", "basic rules"),
                 ("d", "review removal"),
             ]),
             theme::keys(&[
@@ -591,7 +646,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                         ])
                     })
                     .collect(),
-                (72, 23),
+                (84, 27),
                 "↑ ↓ scroll  ·  Esc / Enter close",
                 app.modal_scroll,
                 ICE,
@@ -651,7 +706,7 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 fg(MUTED),
             ));
             lines.push(Line::styled(
-                "m changes the view. a selects candidates. d reviews the queue.",
+                "a selects checked candidates. Shift+A selects basic matches.",
                 fg(ICE),
             ));
             popup(
@@ -708,13 +763,13 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
             let mut lines = vec![
                 Line::styled(
                     format!(
-                        "Remove {} followers from @{}?",
+                        "Check {} accounts for removal from @{}?",
                         app.confirmation.len(),
                         clean(&app.handle)
                     ),
                     bold(TEXT),
                 ),
-                Line::styled("These accounts will stop following you.", fg(TEXT)),
+                Line::styled("Only accounts that pass all rules are removed.", fg(TEXT)),
                 Line::styled("There is no restore-followers action.", bold(RED)),
                 Line::styled(
                     format!(
@@ -725,6 +780,10 @@ fn render_modal(frame: &mut Frame, app: &mut App) {
                 ),
             ];
             if !compact {
+                lines.push(Line::styled(
+                    "Activity is checked before removal; others are skipped.",
+                    fg(ICE),
+                ));
                 lines.push(Line::styled(
                     "b sends the approved queue to background; p pauses.",
                     fg(ICE),
