@@ -1,3 +1,4 @@
+import { nativeSettings, validSettings } from "./pairing";
 import { XClient, XError } from "./x-client";
 import { ChromeJournal } from "./journal";
 import { Runner, safeMessage } from "./runner";
@@ -14,6 +15,8 @@ let status = "Not connected";
 let retries = 0;
 let serial = Promise.resolve();
 let controlEpoch = 0;
+let accountHandle = "";
+let settingsWrites = Promise.resolve();
 chrome.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
     client.observe(details);
@@ -37,31 +40,74 @@ async function disconnect() {
   controlEpoch++;
   runner.disconnect();
   session = "";
+  accountHandle = "";
   if (heartbeat) clearInterval(heartbeat);
   heartbeat = null;
   const old = socket;
   socket = null;
   old?.close();
+  await chrome.storage.session.set({ accountHandle });
   await setStatus("Disconnected — pending work is paused");
 }
-async function connect() {
-  await initialized;
-  await disconnect();
+async function connect(
+  mode: "saved" | "auto" | "manual" | "retry" = "saved",
+  manual?: unknown,
+): Promise<void> {
+  const stopping = disconnect();
   const attempt = generation;
-  const settings = await chrome.storage.local.get(["port", "token"]);
+  await stopping;
+  await initialized;
+  if (attempt !== generation) return;
+  const stored = await chrome.storage.local.get([
+    "port",
+    "token",
+    "pairingMode",
+  ]);
+  let settings: unknown =
+    mode === "manual" && manual !== undefined ? manual : stored;
   if (
-    typeof settings.token !== "string" ||
-    !/^[a-f0-9]{64}$/.test(settings.token)
+    mode === "auto" ||
+    (mode === "saved" && stored.pairingMode !== "manual")
   ) {
-    await setStatus("Pairing needed — open forgive-me and follow setup");
-    return;
-  }
-  const port = Number(settings.port);
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    await setStatus("Invalid local port");
-    return;
+    try {
+      settings = await nativeSettings(
+        (host, request) => chrome.runtime.sendNativeMessage(host, request),
+        chrome.runtime.id,
+      );
+    } catch (error) {
+      if (mode === "auto" || !validSettings(settings)) {
+        if (attempt === generation)
+          await setStatus(
+            "Start forgive-me in your terminal, then select Connect automatically.",
+          );
+        throw error;
+      }
+    }
   }
   if (attempt !== generation) return;
+  if (!validSettings(settings))
+    throw Error(
+      "Use Connect automatically, or enter valid manual pairing settings.",
+    );
+  const chosen = {
+    port: settings.port,
+    token: settings.token,
+    pairingMode:
+      mode === "manual"
+        ? "manual"
+        : mode === "auto"
+          ? "auto"
+          : (stored.pairingMode ?? "auto"),
+  };
+  // Writes finish in request order. A newer explicit request always wins, even
+  // when the previous storage write was already in progress at cancellation.
+  const save = async () => {
+    if (attempt === generation) await chrome.storage.local.set(chosen);
+  };
+  settingsWrites = settingsWrites.then(save, save);
+  await settingsWrites;
+  if (attempt !== generation) return;
+  const port = chosen.port;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/bridge`);
   socket = ws;
   const timeout = setTimeout(() => {
@@ -73,7 +119,7 @@ async function connect() {
         JSON.stringify({
           v: 1,
           type: "hello",
-          token: settings.token,
+          token: chosen.token,
           extension_id: chrome.runtime.id,
         }),
       );
@@ -86,6 +132,8 @@ async function connect() {
     if (socket !== ws) return;
     socket = null;
     session = "";
+    accountHandle = "";
+    void chrome.storage.session.set({ accountHandle });
     controlEpoch++;
     runner.disconnect();
     if (heartbeat) clearInterval(heartbeat);
@@ -93,7 +141,7 @@ async function connect() {
     void setStatus("Disconnected — pending work is paused");
     if (retries++ < 3)
       setTimeout(() => {
-        if (attempt === generation) void connect();
+        if (attempt === generation) void connect("retry").catch(() => {});
       }, 3000);
   };
   ws.onmessage = (event) => {
@@ -120,7 +168,9 @@ async function handle(event: MessageEvent, ws: WebSocket): Promise<void> {
     runner.connect();
     retries = 0;
     await setStatus("Connected");
+    if (ws !== socket) return;
     const recovered = await runner.recovery();
+    if (ws !== socket) return;
     if (recovered)
       send({ type: "recovery", session_id: session, ...recovered });
     heartbeat = setInterval(() => {
@@ -169,6 +219,13 @@ async function handle(event: MessageEvent, ws: WebSocket): Promise<void> {
           retry_at_ms: e instanceof XError ? e.retryAt : null,
         };
       }
+      if (
+        taskSession === session &&
+        msg.work?.command?.kind === "get_session"
+      ) {
+        accountHandle = result.kind === "session" ? result.handle : "";
+        await chrome.storage.session.set({ accountHandle });
+      }
       send(
         {
           type: "result",
@@ -199,12 +256,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   )
     return false;
   if (message.type === "status") {
-    respond({ status });
+    respond({ status, accountHandle });
     return false;
   }
-  if (message.type === "connect") {
+  if (message.type === "connect" || message.type === "auto_pair") {
     retries = 0;
-    void connect()
+    void connect(
+      message.type === "auto_pair" ? "auto" : "manual",
+      message.settings,
+    )
       .then(() => respond({ ok: true }))
       .catch((e) => respond({ ok: false, error: safeMessage(e) }));
     return true;
@@ -222,7 +282,21 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   return false;
 });
-chrome.runtime.onStartup.addListener(() => {
-  void connect();
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") void chrome.runtime.openOptionsPage();
 });
-void connect();
+chrome.runtime.onStartup.addListener(() => {
+  void connect().catch(() => {});
+});
+// Recheck identity after X loads, only before an account session is established.
+chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+  if (
+    change.status === "complete" &&
+    tab.url?.startsWith("https://x.com/") &&
+    socket?.readyState === WebSocket.OPEN &&
+    !accountHandle
+  ) {
+    void connect("retry").catch(() => {});
+  }
+});
+void connect().catch(() => {});

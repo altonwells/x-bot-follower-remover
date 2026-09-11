@@ -1,12 +1,13 @@
-forgive-me v0.1.3 redesigns the terminal around a fullscreen follower dashboard.
+forgive-me v0.1.4 adds automatic Chrome pairing and a guided setup flow.
 
-- Deep ink, mint and ice palette; clear status cards, scan stages, account selection and policy decisions.
-- Live account evidence beside the inventory on wide terminals; compact layouts down to 52×12.
-- Matching pairing screens, filter controls, scrollable account details/help, and removal review with always-visible cancel controls.
-- Refined ladle, water and X animation with the real verified-removal counter. Paused/disconnected states remain still; `--no-animation` is supported.
-- Mouse-wheel navigation stays inside the alternate screen. Resize redraws immediately; normal exit and panic cleanup restore mouse and shell modes.
-- No new runtime dependencies, X actions, or cleanup heuristics. Animation frames read queue counters without scanning the follower inventory.
+- Press `b` in the terminal guide to open Chrome and copy the extension folder path.
+- Load the extension once. Chrome still requires this installation step.
+- The extension obtains the port and secret from a local native messaging helper. No manual secret entry is needed.
+- The extension shows the terminal connection and X account separately. The terminal still requires account confirmation before work.
+- Manual connection settings remain available for repair and survive reconnects.
+- Cancelled pairing attempts cannot replace a newer connection choice.
+- The installer preserves the extension path and stored data. Uninstall removes this installation's native host registration.
 
-Quit any running copy and reopen `forgive-me` after updating. Existing pairing settings, keep choices and action history are preserved. Reload the extension after installation to pick up the matching version label; its X adapter behavior is unchanged from v0.1.2.
+After updating, quit and reopen `forgive-me`. Reload the extension in `chrome://extensions` and accept the native messaging permission if Chrome asks. Open the extension and select **Connect automatically**.
 
-Validation uses fictional rendered fixtures, a real pseudo-terminal, Rust and extension tests, and installer tests. Live X endpoint compatibility still needs a fresh read-only scan; no real follower removal was performed for this release.
+Tests cover the native message exchange with the compiled executable, authenticated local connection, pairing races, setup screens, terminal behavior, and installation. Live Chrome installation and live X compatibility remain unverified. No real followers were removed.

@@ -74,6 +74,11 @@ class Fullscreen(unittest.TestCase):
             os.write(master, b"q")
             read_for(0.5)
             found, status = os.waitpid(pid, os.WNOHANG)
+            # PTY EOF can arrive just before the child becomes waitable.
+            deadline = time.monotonic() + 1
+            while found == 0 and time.monotonic() < deadline:
+                time.sleep(0.01)
+                found, status = os.waitpid(pid, os.WNOHANG)
             self.assertEqual(found, pid, "q must exit promptly")
             exited = True
             self.assertEqual(os.waitstatus_to_exitcode(status), 0)

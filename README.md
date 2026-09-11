@@ -73,30 +73,28 @@ forgive-me
 
 Keep the terminal open during these steps.
 
-1. Open `chrome://extensions` in Chrome.
-2. Enable **Developer mode**.
+1. Press `b` in the setup guide. The app opens Chrome and copies the extension folder path.
+2. Enable **Developer mode** on Chrome's extension page.
 3. Select **Load unpacked**.
 4. Press **Cmd+Shift+G** in the folder selector.
-5. Enter the extension folder path shown below.
-6. Select the folder.
-7. Press Enter in the terminal to open the **Pair** screen.
+5. Paste the copied path and select the folder.
+6. The extension pairs with the terminal automatically.
+7. Select **Open X** in the extension and sign in to your X account.
+8. Check that the terminal shows the correct account.
+9. Press Enter to open the follower list.
+
+Chrome requires you to confirm the extension installation once.
+You do not need to enter a port or pairing secret.
+The extension folder is:
 
 ```text
 ~/.local/share/forgive-me/bundle/forgive-me-extension
 ```
 
-1. Open the forgive-me extension from Chrome's extension menu.
-2. Enter the port from the terminal's **Pair** screen.
-3. Press `y` in the terminal to copy the pairing secret.
-4. Paste the secret into the extension settings.
-5. Select **Save & connect**.
-6. Open `x.com` in the same Chrome profile.
-7. Sign in to the X account you want to use.
-8. Make sure the terminal shows the correct account.
-9. Press Enter to open the follower list.
-
-The terminal guides you through the connection steps. **Shift+P** opens the guide again.
-The pairing secret stays hidden unless you press `v`.
+If the extension is already installed, press Enter, then `b` to open its setup page.
+Select **Connect automatically** if it does not connect.
+**Shift+P** opens the terminal guide again.
+Manual pairing remains available under **Manual connection and repair**.
 
 ## Remove unwanted followers
 
@@ -178,10 +176,10 @@ forgive-me --no-animation
 1. Quit forgive-me.
 2. Run the install command again.
 3. Open `chrome://extensions`.
-4. Select **Reload** on forgive-me.
+4. Select **Reload** on forgive-me. Accept the native messaging permission if Chrome asks.
 5. Refresh your X tab.
 6. Start forgive-me in the terminal.
-7. Select **Save & connect** in the extension settings.
+7. Open the extension and select **Connect automatically**.
 
 The update preserves your pairing settings, keep list, and action history.
 
@@ -191,7 +189,7 @@ X can change its web interface or restrict requests. The app can stop when this 
 A pause cannot stop a removal request that the extension has already sent.
 There is no action to restore removed followers. A removed account can follow a public account again.
 
-Version 0.1.3 passed automated, terminal, and installer tests.
+Version 0.1.4 passed automated, terminal, and installer tests.
 The updated X integration still needs a new scan on a real account.
 No real follower removal was used to test this release.
 See the [test record](docs/VERIFICATION.md).

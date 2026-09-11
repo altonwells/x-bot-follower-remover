@@ -11,6 +11,20 @@ A WebSocket server listens on `127.0.0.1`.
 The Chrome Manifest V3 extension connects with a random pairing secret.
 The first authenticated connection fixes the allowed extension identity.
 X cookies and authorization headers stay in Chrome.
+
+On macOS, TUI startup registers the native messaging host `com.forgive_me.pairing` for the current user.
+A small shell wrapper starts the same executable in its hidden `native-host` mode.
+It passes the active data folder as an absolute path.
+Chrome exchanges one length-prefixed JSON request and response over standard input and output.
+The host returns the existing port and secret only while the corresponding TUI holds its process lock.
+It accepts only the bundled extension's origin and rejects a conflicting saved extension identity.
+The secret does not enter a URL, HTTP endpoint, log, or clipboard during automatic pairing.
+
+The extension ID is derived from its canonical installation path with Chromium's SHA-256 scheme.
+The extension keeps its existing ID and stored data when the installer replaces the bundle at that path.
+Manual settings remain available for repair.
+Automatic pairing does not confirm the X account or start work.
+
 The [browser protocol](../protocol/README.md) defines the allowed commands and message limits.
 
 The extension finds X operations in observed requests and X JavaScript assets.

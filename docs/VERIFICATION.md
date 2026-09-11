@@ -82,3 +82,19 @@ Verification: full `cargo test --offline --locked` exited 0 (27 passed). The san
 Simplify review: reused `theme::centered` in setup and removed an unnecessary manual resize clear already performed by Ratatui (net −6 lines, one fewer terminal I/O call per resize). Quality review was clean. An additional Details inventory traversal was left alone because eliminating it required broader borrow/parameter restructuring. No live X account was scanned or modified.
 
 Release compilation and extension bundling passed. `python3 tests/install_test.py` exited 0 (`Ran 7 tests`, `OK`); `python3 tests/terminal_test.py target/release/forgive-me` exited 0 (`Ran 1 test`, `OK`). The PTY lifecycle check used the optimized release binary.
+
+## Automatic Chrome pairing (v0.1.4)
+
+The terminal guide opens Chrome's extension page and copies the installed folder path on `b`. Chrome still requires the user to load the unpacked extension. The new native messaging helper transfers the existing port and secret over a private standard-input/output pipe. It checks the caller's exact extension origin, request shape, live TUI lock, and saved identity before returning credentials. TUI startup registers the host for the active absolute data path. Uninstall removes only its own registration.
+
+References: [Chrome distribution rules](https://developer.chrome.com/docs/extensions/how-to/distribute), [native messaging protocol and host registration](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), and [Chromium extension path identity implementation](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/crx_file/id_util.cc). The canonical installed extension path retains its existing Chrome ID; no manifest key or identity migration was introduced.
+
+The extension presents terminal connection, X sign-in, and account confirmation as separate steps. Manual settings remain available. Automatic pairing does not start a scan, approve an account, resume work, or approve removals. X cookie handling, the cleanup protocol, and action verification remain unchanged.
+
+Verification: `cargo test --offline --locked` exited 0 (31 passed), including the compiled native host's framed exchange and authenticated local WebSocket connection. The native host integration test also passed from an isolated bundle, without a pre-existing npm build. `cargo clippy --offline --all-targets -- -D warnings`, `npm ci --offline`, and `npm run check` exited 0. `npm test` exited 0 (`tests 49`, `pass 49`, `fail 0`). Four new worker regression tests cover manual/automatic races, cancellation followed by reconnect, persistent manual endpoints, and an in-progress storage write.
+
+The focused Rust baseline and final check each passed 27 tests. Simplify review removed redundant response type casts (net 0 lines). No shared helper replaced the native reader: the existing configuration loader can create missing settings, which is inappropriate for the read-only pairing host. Separately, correctness fixes removed shared in-flight connection coalescing, preserved manual settings during retries, serialized settings writes, and resolved relative data paths before Chrome starts the helper.
+
+The installer suite passed (`Ran 7 tests`, `OK`), including ownership checks for native-host removal. The PTY test initially caught a test timing race: terminal EOF can precede the process becoming waitable. A bounded wait now checks exit without changing app behavior. The unchanged test also passed on retry. The corrected test passed (`Ran 1 test`, `OK`) and checks the same fullscreen, wheel, resize, and restoration behavior.
+
+The updated pairing screen was rendered and visually inspected with fictional fixture data. Live Chrome installation, native-host launch by Chrome itself, and live X compatibility remain unverified. No live account was scanned or modified.

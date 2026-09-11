@@ -4,8 +4,8 @@
     15px/1.6 ui-sans-serif,
     system-ui,
     sans-serif;
-  background: #141318;
-  color: #eeeaf3;
+  background: #0b1118;
+  color: #deeaef;
 }
 * {
   box-sizing: border-box;
@@ -14,14 +14,14 @@ body {
   margin: 0;
 }
 main {
-  max-width: 620px;
+  max-width: 720px;
   margin: 64px auto;
   padding: 0 28px;
 }
 .eyebrow {
   font-size: 10px;
   letter-spacing: 0.18em;
-  color: #a29aa9;
+  color: #849baa;
 }
 h1 {
   font-size: 54px;
@@ -31,15 +31,15 @@ h1 {
   margin: 18px 0;
 }
 h1 span {
-  color: #c2a5ff;
+  color: #7ce7c4;
 }
 .intro {
   font-size: 20px;
-  color: #c9c2d2;
+  color: #deeaef;
   margin-bottom: 40px;
 }
 section {
-  border-top: 1px solid #37313e;
+  border-top: 1px solid #2a3f4d;
   padding: 24px 0;
 }
 h2 {
@@ -47,18 +47,18 @@ h2 {
   margin: 0 0 10px;
 }
 p {
-  color: #aca4b7;
+  color: #849baa;
 }
 code {
   font:
     13px ui-monospace,
     monospace;
-  color: #e6d8ff;
+  color: #86bee5;
 }
 label {
   display: block;
   font-size: 12px;
-  color: #c9c2d2;
+  color: #deeaef;
   margin: 20px 0 7px;
 }
 input {
@@ -67,9 +67,9 @@ input {
     monospace;
   width: 100%;
   padding: 11px 12px;
-  border: 1px solid #4b4157;
+  border: 1px solid #2a3f4d;
   border-radius: 4px;
-  background: #1e1a24;
+  background: #0f1923;
   color: #fff;
 }
 #port {
@@ -77,27 +77,28 @@ input {
 }
 input:focus,
 button:focus-visible {
-  outline: 2px solid #c2a5ff;
+  outline: 2px solid #7ce7c4;
   outline-offset: 3px;
 }
 .buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 24px;
 }
 button {
   cursor: pointer;
   font: 600 13px system-ui;
-  border: 1px solid #c2a5ff;
-  background: #c2a5ff;
-  color: #20162f;
+  border: 1px solid #7ce7c4;
+  background: #7ce7c4;
+  color: #0b1118;
   padding: 11px 17px;
   border-radius: 4px;
 }
 button.secondary {
   background: transparent;
-  border-color: #51475c;
-  color: #d8cce6;
+  border-color: #2a3f4d;
+  color: #86bee5;
 }
 button:disabled {
   opacity: 0.5;
@@ -106,14 +107,14 @@ button:disabled {
 #status {
   font-size: 13px;
   min-height: 24px;
-  color: #c2a5ff;
+  color: #7ce7c4;
 }
 .secondary-section {
   padding-top: 22px;
 }
 footer {
   font-size: 11px;
-  color: #8e8699;
+  color: #849baa;
   padding: 20px 0 45px;
 }
 @media (max-width: 600px) {
@@ -123,4 +124,19 @@ footer {
   h1 {
     font-size: 44px;
   }
+}
+
+details {
+  border: 1px solid #2a3f4d;
+  border-radius: 8px;
+  padding: 18px;
+  background: #0f1923;
+}
+summary {
+  cursor: pointer;
+  color: #86bee5;
+}
+summary:focus-visible {
+  outline: 2px solid #7ce7c4;
+  outline-offset: 3px;
 }

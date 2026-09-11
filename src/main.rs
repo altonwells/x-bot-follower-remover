@@ -56,10 +56,30 @@ enum CliCommand {
         reset: bool,
     },
     Doctor,
+    #[command(hide = true)]
+    NativeHost {
+        origin: String,
+    },
+    #[command(hide = true)]
+    UnregisterHost,
 }
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if let Some(CliCommand::NativeHost { origin }) = &args.command {
+        let dir = config::data_dir(args.data_dir.clone())?;
+        let extension = forgive_me::setup::extension_dir();
+        return forgive_me::native::serve(
+            &dir,
+            &extension,
+            origin,
+            std::io::stdin().lock(),
+            std::io::stdout().lock(),
+        );
+    }
+    if matches!(args.command, Some(CliCommand::UnregisterHost)) {
+        return forgive_me::native::unregister();
+    }
     let (events_tx, events_rx) = mpsc::channel(64);
     if args.demo {
         let app = App::new(Store::open(Path::new(":memory:"))?, true)?;
@@ -124,12 +144,18 @@ async fn main() -> Result<()> {
             return Ok(());
         }
         None => {}
+        Some(CliCommand::NativeHost { .. } | CliCommand::UnregisterHost) => unreachable!(),
     }
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, config.port))
         .await
         .context("Local bridge port unavailable; use --port to choose another")?;
     let mut app = App::new(Store::open(&dir.join("cleanup.sqlite"))?, false)?;
     app.configure_setup(&config);
+    if let Err(error) = forgive_me::native::register(&dir, &forgive_me::setup::extension_dir()) {
+        app.log(format!(
+            "Automatic pairing unavailable: {error}. Manual pairing remains available."
+        ));
+    }
     let bridge = tokio::spawn(bridge::serve(listener, config, dir, events_tx));
     let result = run(app, events_rx, args.no_animation).await;
     bridge.abort();

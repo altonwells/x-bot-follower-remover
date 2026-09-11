@@ -5,14 +5,24 @@
 ## If the extension does not connect
 
 1. Start forgive-me in the terminal.
-2. Press **Shift+P** to open the connection guide.
-3. Make sure the extension port agrees with the terminal port.
-4. Copy the pairing secret from the terminal with `y`.
-5. Paste the secret into the extension settings.
-6. Select **Save & connect**.
+2. Reload the extension in `chrome://extensions` after an update.
+3. Open the extension settings.
+4. Select **Connect automatically**.
 
 The extension and X must use the same Chrome profile.
+The app registers its local pairing helper when the terminal starts.
+The helper gives the extension the port and secret through Chrome's native messaging pipe.
+
+If automatic pairing fails:
+
+1. Press **Shift+P**, then `m` in the terminal to open manual pairing.
+2. Open **Manual connection and repair** in the extension.
+3. Enter the port shown in the terminal.
+4. Press `y` in the terminal to copy the pairing secret.
+5. Paste the secret into the extension and select **Save & connect**.
+
 The pairing secret gives the extension access to the local app. Keep it private.
+Manual connection settings remain in use until you select **Connect automatically**.
 
 If the terminal cannot identify your X account:
 
@@ -35,7 +45,7 @@ If the terminal reports an unavailable X operation:
 1. Reload the extension in `chrome://extensions`.
 2. Refresh the signed-in X tab.
 3. Select **Refresh X discovery** in the extension settings.
-4. Select **Save & connect**.
+4. Select **Connect automatically**.
 5. Press `s` in the terminal to start or continue the scan.
 
 Scans from before version 0.1.2 require new account data.
@@ -81,6 +91,7 @@ This is often Shift or Option.
 | Command | `~/.local/bin/forgive-me` |
 | App files and licenses | `~/.local/share/forgive-me/bundle/` |
 | Chrome extension | `~/.local/share/forgive-me/bundle/forgive-me-extension/` |
+| Chrome pairing host | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.forgive_me.pairing.json` |
 | Account data and settings | `~/Library/Application Support/forgive-me/` |
 
 The data folder contains `cleanup.sqlite`, `config.json`, and a process lock.
@@ -106,7 +117,7 @@ export PATH="$HOME/.local/bin:$PATH"
 To install a specific release:
 
 ```sh
-gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.3
+gh api repos/altonwells/forgive-me/contents/install.sh -H 'Accept: application/vnd.github.raw+json' | sh -s -- --version v0.1.4
 ```
 
 To install a local package from the repository folder:
@@ -140,7 +151,8 @@ sh ~/.local/share/forgive-me/bundle/install.sh --uninstall
 
 3. Remove the extension from `chrome://extensions`.
 
-The uninstaller preserves account data and pairing settings.
+The uninstaller removes the Chrome pairing host if it belongs to this installation.
+It preserves account data and pairing settings.
 It also preserves the shared `~/.local/bin` entry in your shell startup file.
 
 ## Diagnostics

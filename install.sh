@@ -42,6 +42,7 @@ main() {
         if [ -L "$bin_dir/forgive-me" ] && [ "$(readlink "$bin_dir/forgive-me")" = "$target" ]; then
             rm "$bin_dir/forgive-me"
         fi
+        if [ -x "$target" ]; then "$target" unregister-host >/dev/null 2>&1 || :; fi
         rm -rf "$install_dir"
         printf '%s\n' 'Uninstalled forgive-me. Your cleanup database and Chrome extension settings were preserved.' 'The shared ~/.local/bin PATH entry is retained. Remove the extension from chrome://extensions if desired.'
         return
@@ -134,7 +135,7 @@ PATH_BLOCK
     fi
     printf '\nInstalled %s\nCommand: %s/forgive-me\nChrome extension: %s/bundle/forgive-me-extension\n\n' "$installed_version" "$bin_dir" "$install_dir"
     case ":$PATH:" in *":$bin_dir:"*) ;; *) printf '%s\n' 'Open a new terminal, or add the binary directory to PATH in this terminal.' ;; esac
-    printf '%s\n' 'Next: run forgive-me for guided setup, or forgive-me --demo.' 'In chrome://extensions, enable Developer mode and Load unpacked using the extension path above.' 'For updates, quit the TUI, rerun this installer, then Reload the extension in Chrome.'
+    printf '%s\n' 'Next: run forgive-me, then press b to start Chrome setup. Use forgive-me --demo to preview.' 'Chrome requires Load unpacked once. Pairing then runs automatically.' 'For updates, reopen the TUI, Reload the extension, then select Connect automatically.'
 }
 
 main "$@"

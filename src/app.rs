@@ -483,9 +483,33 @@ impl App {
                 self.pause().await?;
                 self.quit = true;
             }
-            KeyCode::Char('v') if setup.step == Step::Pair => setup.revealed = !setup.revealed,
+            KeyCode::Char('v') if setup.step == Step::Pair => {
+                setup.manual = true;
+                setup.revealed = !setup.revealed;
+            }
+            KeyCode::Char('m') => {
+                let manual = !setup.manual;
+                setup.go(Step::Pair);
+                setup.manual = manual;
+            }
+            KeyCode::Char('b') => match setup.step {
+                Step::Install => {
+                    crate::setup::copy(setup.extension_dir.display().to_string()).await?;
+                    crate::setup::open_chrome("chrome://extensions".into()).await?;
+                    setup.go(Step::Pair);
+                    self.log("Folder path copied. Load the extension in Chrome; pairing starts automatically.");
+                }
+                Step::Pair => {
+                    let id = crate::native::extension_id(&setup.extension_dir)?;
+                    crate::setup::open_chrome(format!("chrome-extension://{id}/options.html"))
+                        .await?;
+                    self.log("Chrome setup opened. Keep this terminal running.");
+                }
+                Step::Connect => crate::setup::open_chrome("https://x.com/".into()).await?,
+                Step::Ready => {}
+            },
             KeyCode::Char('y') if matches!(setup.step, Step::Install | Step::Pair) => {
-                let (value, label) = if setup.step == Step::Install {
+                let (value, label) = if setup.step == Step::Install || !setup.manual {
                     (
                         setup.extension_dir.display().to_string(),
                         "Extension folder",

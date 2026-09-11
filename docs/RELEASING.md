@@ -19,4 +19,4 @@ gh release create v0.1.0 --repo altonwells/forgive-me --verify-tag \
 
 Never replace assets on an existing release silently. Publish a new version for binary changes. Source-only installer fixes may be made on main; existing releases include their original installer for local install/uninstall. Installed users update by rerunning the authenticated install command, then reloading the unpacked Chrome extension.
 
-The installer deliberately does not install a Chrome extension through browser policy or modify the user's account. A user must load the extension and pair it. Moving from an earlier manually unpacked path may change its extension ID; re-pair with `forgive-me pair --reset` if needed.
+The installer deliberately does not install a Chrome extension through browser policy or modify the user's account. A user must load the extension. Pairing then runs through Chrome native messaging while the TUI is open. Moving from an earlier manually unpacked path may change its extension ID; re-pair with `forgive-me pair --reset` if needed.

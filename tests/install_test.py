@@ -1,5 +1,6 @@
 """Installer integration tests; only isolated, installer-owned paths are changed."""
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
@@ -20,7 +21,7 @@ class InstallerTest(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.install = self.base / 'prefix with spaces' / 'forgive-me'
         self.bin = self.base / 'bin with spaces'
-        self.env = dict(os.environ, FORGIVE_ME_INSTALL_DIR=str(self.install), FORGIVE_ME_BIN_DIR=str(self.bin))
+        self.env = dict(os.environ, HOME=str(self.base), FORGIVE_ME_INSTALL_DIR=str(self.install), FORGIVE_ME_BIN_DIR=str(self.bin))
 
     def run_installer(self, *args, ok=True):
         result = subprocess.run(['sh', str(ROOT / 'install.sh'), '--no-modify-path', *args], env=self.env, text=True, capture_output=True)
@@ -55,7 +56,14 @@ class InstallerTest(unittest.TestCase):
         self.install_local()
         self.assertFalse((extension / 'obsolete.js').exists())
         self.assertEqual(executable.resolve(), (self.install / 'bundle/forgive-me').resolve())
+        host = self.base / 'Library/Application Support/Google/Chrome/NativeMessagingHosts/com.forgive_me.pairing.json'
+        host.parent.mkdir(parents=True)
+        host.write_text(json.dumps({'path': '/another/installation/forgive-me-native-host.sh'}))
+        subprocess.run([str(executable), 'unregister-host'], env=self.env, check=True)
+        self.assertTrue(host.exists(), 'Must preserve another installation\'s host')
+        host.write_text(json.dumps({'path': str((self.install / 'bundle/forgive-me-native-host.sh').resolve())}))
         self.run_installer('--uninstall')
+        self.assertFalse(host.exists(), 'Must remove its own host registration')
         self.assertFalse(executable.is_symlink())
         self.assertFalse(self.install.exists())
         self.assertEqual(state.read_text(), 'preserve me')

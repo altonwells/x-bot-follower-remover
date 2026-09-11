@@ -9,6 +9,7 @@ if (process.argv.includes("--test")) {
     outExtension: { ".js": ".mjs" },
     bundle: true,
     platform: "node",
+    external: ["esbuild"],
     format: "esm",
     target: "node22",
   });

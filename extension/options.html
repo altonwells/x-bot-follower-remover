@@ -8,22 +8,54 @@
   </head>
   <body>
     <main>
-      <p class="eyebrow">YOUR TERMINAL. YOUR ACCOUNT.</p>
+      <p class="eyebrow">CHROME SETUP</p>
       <h1>forgive-me<span>.</span></h1>
-      <p class="intro">
-        Chrome does the work.<br />Your terminal stays in control.
-      </p>
+      <p class="intro">Connect once. Review removals in your terminal.</p>
       <section>
-        <h2>Connect to your TUI</h2>
+        <h2>1. Connect the terminal</h2>
+        <p>Run <code>forgive-me</code> in your terminal. Keep it open.</p>
         <p>
-          Run <code>forgive-me</code> and follow its setup guide. Press
-          <code>y</code> in the pairing step to copy your secret, then paste it
-          below. Keep the terminal running. To reopen setup, press
-          <code>Shift+P</code> in the follower list.
+          The extension obtains the connection settings from the local app. You
+          do not need to copy a secret.
+        </p>
+        <div class="buttons">
+          <button id="auto-pair" type="button">Connect automatically</button>
+          <button id="disconnect" type="button" class="secondary">
+            Disconnect
+          </button>
+        </div>
+        <p id="status" role="status" aria-live="polite">Checking connection…</p>
+      </section>
+      <section>
+        <h2>2. Sign in to X</h2>
+        <p>Use this Chrome profile for your X account.</p>
+        <button id="open-x" type="button" class="secondary">Open X</button>
+        <p id="account" role="status" aria-live="polite">
+          Waiting for your account.
+        </p>
+      </section>
+      <section>
+        <h2>3. Confirm your account</h2>
+        <p>Return to the terminal. Make sure it shows the correct account.</p>
+        <p>
+          Press Enter to open your followers. Press <code>s</code> to start the
+          scan.
+        </p>
+        <p>Connection does not approve any removals.</p>
+      </section>
+      <details>
+        <summary>Manual connection and repair</summary>
+        <p>
+          If automatic pairing fails, restart the updated terminal app. Then
+          retry the connection.
+        </p>
+        <p>
+          For manual pairing, press <code>Shift+P</code> in the terminal, then
+          <code>m</code>.
         </p>
         <form id="pair">
-          <label for="port">Local port</label
-          ><input
+          <label for="port">Local port</label>
+          <input
             id="port"
             name="port"
             type="number"
@@ -32,8 +64,8 @@
             max="65535"
             required
           />
-          <label for="token">Pairing secret</label
-          ><input
+          <label for="token">Pairing secret</label>
+          <input
             id="token"
             name="token"
             type="password"
@@ -45,28 +77,18 @@
             placeholder="Paste the secret from your terminal"
           />
           <div class="buttons">
-            <button type="submit">Save & connect</button
-            ><button id="disconnect" type="button" class="secondary">
-              Disconnect
-            </button>
+            <button type="submit" class="secondary">Save & connect</button>
           </div>
         </form>
-        <p id="status" role="status" aria-live="polite">Checking connection…</p>
-      </section>
-      <section class="secondary-section">
-        <h2>Prepare X</h2>
         <p>
-          Keep an X tab open and signed in. If the TUI reports a missing
-          operation, visit your followers page and refresh the X tab, then
-          refresh discovery here and reconnect.
+          If the terminal reports a missing X operation, refresh the X tab. Then
+          refresh discovery.
         </p>
-        <button id="discover" class="secondary">Refresh X discovery</button>
-      </section>
-      <footer>
-        Selection and removal happen in the TUI. Your X session stays in Chrome.
-        Browser automation uses private X interfaces and may trigger account
-        restrictions.
-      </footer>
+        <button id="discover" type="button" class="secondary">
+          Refresh X discovery
+        </button>
+      </details>
+      <footer id="version"></footer>
     </main>
     <script type="module" src="options.js"></script>
   </body>

@@ -26,30 +26,54 @@ pub struct Setup {
     pub token: String,
     pub extension_dir: PathBuf,
     pub revealed: bool,
+    pub manual: bool,
     pub scroll: u16,
 }
 impl Setup {
     pub fn new(config: &Config) -> Self {
-        let bundled = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.canonicalize().ok())
-            .and_then(|p| p.parent().map(|p| p.join("forgive-me-extension")))
-            .filter(|p| p.join("manifest.json").is_file());
         Self {
             step: Step::Install,
             port: config.port,
             token: config.token.clone(),
-            extension_dir: bundled.unwrap_or_else(|| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("extension/dist")
-            }),
+            extension_dir: extension_dir(),
             revealed: false,
+            manual: false,
             scroll: 0,
         }
     }
     pub fn go(&mut self, step: Step) {
         self.step = step;
         self.revealed = false;
+        self.manual = false;
         self.scroll = 0;
+    }
+}
+
+pub fn extension_dir() -> PathBuf {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| p.parent().map(|p| p.join("forgive-me-extension")))
+        .filter(|p| p.join("manifest.json").is_file());
+    bundled.unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("extension/dist"))
+}
+
+pub async fn open_chrome(url: String) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    return tokio::task::spawn_blocking(move || {
+        let status = std::process::Command::new("/usr/bin/open")
+            .args(["-a", "Google Chrome", &url])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()?;
+        anyhow::ensure!(status.success(), "Open Chrome manually to continue setup");
+        Ok(())
+    })
+    .await?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        anyhow::bail!("Open Chrome manually to continue setup");
     }
 }
 
@@ -114,35 +138,78 @@ pub fn render(frame: &mut Frame, app: &App) {
     );
     let (title, text, keys) = match setup.step {
         Step::Install => (
-            " 1 / Load the Chrome extension ",
+            " 1 / Set up Chrome ",
             format!(
-                "Open Chrome using the profile where you use X.\n\n1. Go to chrome://extensions\n2. Turn on Developer mode (top right).\n3. Click Load unpacked and choose this folder:\n\n{}\n\nPress y to copy the folder path. In the macOS folder chooser,\npress Cmd+Shift+G, paste the path, then select the folder.\n\nAlready loaded? Press Enter to continue.",
+                "Press b to start setup.
+
+The wizard opens Chrome and copies the extension folder path.
+Chrome requires you to confirm installation once.
+The extension then pairs with this terminal automatically.
+
+Extension folder:
+{}
+
+Already installed? Press Enter, then b to open its setup page.",
                 setup.extension_dir.display()
             ),
-            " Enter next   y copy folder   q quit",
+            " b start setup   Enter already installed   q quit",
         ),
-        Step::Pair => (
-            " 2 / Pair with this terminal ",
+        Step::Pair if setup.manual => (
+            " Manual pairing ",
             format!(
-                "1. Click Chrome's puzzle icon, then forgive-me.\n   This opens the extension's connection settings.\n2. Enter the local port and paste the pairing secret below.\n3. Click Save & connect. Keep this terminal running.\n\nLocal port: {}\n\nPairing secret: {}\n\nPress y to copy the secret without showing it.\nPress v to show/hide it. Keep the secret private.\n\nChrome connection: {}",
+                "Open Manual connection and repair in the extension.
+Enter the port and pairing secret. Select Save & connect.
+
+Local port: {}
+
+Pairing secret: {}
+
+Press y to copy the secret. Press v to show or hide it.
+Keep the secret private.
+
+Press m to return to automatic pairing.",
                 setup.port,
                 if setup.revealed {
                     &setup.token
                 } else {
                     "[hidden · y copies · v reveals]"
-                },
-                if app.sender.is_some() {
-                    "connected"
-                } else {
-                    "waiting for Save & connect"
                 }
             ),
-            " Enter next   y copy secret   v show/hide   ← back   q quit",
+            " y copy secret   v show/hide   m automatic   ← back   q quit",
+        ),
+        Step::Pair => (
+            " 2 / Install and pair ",
+            format!(
+                "In Chrome's extension page:
+
+1. Enable Developer mode.
+2. Select Load unpacked.
+3. Press Cmd+Shift+G in the folder selector.
+4. Paste the copied folder path.
+5. Select the folder.
+
+{}
+
+Pairing starts automatically when the extension loads.
+If already installed, press b to open its setup page.
+No port or secret entry is needed.",
+                setup.extension_dir.display()
+            ),
+            " b open extension   y copy folder   m manual   Enter next   q quit",
         ),
         Step::Connect => (
             " 3 / Connect your X account ",
             format!(
-                "1. Keep an x.com tab open and sign in to your account.\n2. In the extension settings, click Save & connect.\n3. Wait here while forgive-me checks the signed-in account.\n\nChrome: {}\nX account: {}\n\nIf the account check fails, refresh your X tab, choose\nRefresh X discovery in the extension, then press r here.\n\nStill disconnected? Press ← to check the port and secret.\nUse the same Chrome profile for the extension and X.",
+                "Press b to open X in Chrome.
+Sign in to the account you want to use.
+The extension rechecks the account after the page loads.
+
+Chrome: {}
+X account: {}
+
+Use the same Chrome profile for the extension and X.
+If identification fails, refresh X and press r.
+If Chrome is disconnected, press ←, then b to retry pairing.",
                 if app.sender.is_some() {
                     "paired and connected"
                 } else {
@@ -154,7 +221,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                     "not identified yet"
                 }
             ),
-            " r retry account check   ← pairing details   q quit",
+            " b open X   r retry account check   ← pairing   m manual   q quit",
         ),
         Step::Ready => (
             " You're connected ",
